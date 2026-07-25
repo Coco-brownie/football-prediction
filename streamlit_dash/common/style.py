@@ -119,7 +119,7 @@ def style_match_result_df(df):
             return "color: #f57c00; font-weight: 600"
         return ""
 
-    return df.style.applymap(color_result, subset=["赛果"] if "赛果" in df.columns else [])
+    return df.style.map(color_result, subset=["赛果"] if "赛果" in df.columns else [])
 
 
 def confidence_level(conf):
