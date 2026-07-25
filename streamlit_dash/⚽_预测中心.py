@@ -83,22 +83,51 @@ if home_cn_col:
 # ==================== 主区域 ====================
 st.title("⚽ 足球赛事预测中心")
 
+# 使用者昵称（必填，存在 session_state 中）
+col_user1, col_user2 = st.columns([1, 4])
+with col_user1:
+    if "current_user" not in st.session_state:
+        st.session_state["current_user"] = ""
+    user_input = st.text_input(
+        "👤 使用者昵称",
+        value=st.session_state["current_user"],
+        placeholder="请输入昵称后才能预测",
+        max_chars=20,
+        key="user_name_input"
+    )
+    st.session_state["current_user"] = user_input.strip()
+
+current_user = st.session_state["current_user"]
+if not current_user:
+    st.error("⚠️ 请先在上方输入使用者昵称，才能使用预测功能")
+else:
+    st.success(f"✅ 当前使用者：{current_user}")
+
+st.divider()
+
 # 免责声明
 st.warning("""
 **⚠️ 免责声明：本系统仅供机器学习研究与教学演示使用，所有预测结果均为模型算法输出，不构成任何投注建议或投资指导。**
 博彩有风险，请理性对待。历史数据来自 [football-data.co.uk](https://www.football-data.co.uk/)，模型为自研 LightGBM 三分类。
 """)
 
-# 顶部统计卡片
+# 顶部统计卡片（仅统计真实比赛）
 col1, col2, col3, col4 = st.columns(4)
 today_str = pd.Timestamp.now().strftime("%Y-%m-%d")
 today_matches = len(df_schedule[df_schedule["match_date"].dt.strftime("%Y-%m-%d") == today_str])
-total_preds = len(df_preds)
-verified_preds = len(df_preds[df_preds["is_verified"] == 1]) if not df_preds.empty else 0
-acc = (df_preds[df_preds["is_verified"] == 1]["is_correct"].mean() * 100) if verified_preds > 0 else 0
+
+# 筛选真实比赛
+if not df_preds.empty and "is_real_match" in df_preds.columns:
+    df_real_preds = df_preds[df_preds["is_real_match"] == 1]
+else:
+    df_real_preds = df_preds
+
+total_preds = len(df_real_preds)
+verified_preds = len(df_real_preds[df_real_preds["is_verified"] == 1]) if not df_real_preds.empty else 0
+acc = (df_real_preds[df_real_preds["is_verified"] == 1]["is_correct"].mean() * 100) if verified_preds > 0 else 0
 
 col1.metric("今日赛事", today_matches, "场")
-col2.metric("累计预测", total_preds, "次")
+col2.metric("累计预测（真实）", total_preds, "次")
 col3.metric("已校验", verified_preds, "场")
 col4.metric("预测准确率", f"{acc:.1f}%" if verified_preds > 0 else "--")
 
@@ -133,10 +162,16 @@ tab_predict, tab_calendar, tab_ai_view, tab_track = st.tabs([
 ])
 
 with tab_predict:
-    render_match_predict_panel(cn_2_std=cn_2_std, std_2_cn=std_2_cn)
+    if not current_user:
+        st.info("👆 请先在顶部输入昵称，再使用手动预测功能")
+    else:
+        render_match_predict_panel(cn_2_std=cn_2_std, std_2_cn=std_2_cn, user_name=current_user)
 
 with tab_calendar:
-    render_schedule_calendar()
+    if not current_user:
+        st.info("👆 请先在顶部输入昵称，再使用赛事日历功能")
+    else:
+        render_schedule_calendar(user_name=current_user)
 
 with tab_ai_view:
     st.subheader("🤖 赛事观点")
@@ -162,8 +197,10 @@ with tab_ai_view:
     
     st.info(f"📅 未来 {days_ahead} 天共 {len(df_upcoming)} 场五大联赛赛事")
     
-    if st.button("🔍 批量计算三AI观点", type="primary", key="calc_ai_view"):
-        if len(df_upcoming) == 0:
+    if st.button("🔍 批量计算三AI观点", type="primary", key="calc_ai_view", disabled=not current_user):
+        if not current_user:
+            st.warning("请先在顶部输入昵称")
+        elif len(df_upcoming) == 0:
             st.warning("暂无符合条件的赛事")
         else:
             from ai_intent_module import calc_ai_bet_intent
@@ -232,13 +269,35 @@ with tab_track:
     if df_preds.empty:
         st.info("暂无预测记录，去手动预测页做一次预测吧～")
     else:
-        verified = df_preds[df_preds["is_verified"] == 1].copy()
+        # 统计范围选择
+        has_user = "user_name" in df_preds.columns
+        if has_user:
+            stat_scope = st.radio(
+                "统计范围",
+                ["全部人员", "仅当前用户"],
+                horizontal=True,
+                key="stat_scope",
+                label_visibility="collapsed"
+            )
+        else:
+            stat_scope = "全部人员"
+        
+        # 筛选真实比赛 + 人员范围
+        if "is_real_match" in df_preds.columns:
+            df_real = df_preds[df_preds["is_real_match"] == 1]
+        else:
+            df_real = df_preds
+        
+        if stat_scope == "仅当前用户" and current_user:
+            df_real = df_real[df_real["user_name"] == current_user]
+        
+        verified = df_real[df_real["is_verified"] == 1].copy()
         total_v = len(verified)
         correct_v = verified["is_correct"].sum() if total_v > 0 else 0
         acc_v = correct_v / total_v if total_v > 0 else 0
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("总预测次数", len(df_preds))
+        c1.metric("真实比赛预测", len(df_real))
         c2.metric("已完赛校验", total_v)
         c3.metric("预测正确", int(correct_v))
         c4.metric("整体准确率", f"{acc_v:.2%}" if total_v > 0 else "--")
@@ -299,7 +358,7 @@ with tab_track:
         # 历史明细（折叠）
         with st.expander(f"📋 预测历史明细（共 {len(df_preds)} 条）", expanded=False):
             # 筛选栏
-            filt_col1, filt_col2, filt_col3, filt_col4 = st.columns(4)
+            filt_col1, filt_col2, filt_col3, filt_col4, filt_col5, filt_col6 = st.columns(6)
             # 联赛筛选
             all_leagues = sorted(df_preds["league_code"].dropna().unique().tolist()) if "league_code" in df_preds.columns else []
             if all_leagues:
@@ -312,6 +371,17 @@ with tab_track:
             selected_verified = filt_col3.selectbox("校验状态", ["全部", "已校验", "未校验"], key="filt_verified")
             # 正确与否
             selected_correct = filt_col4.selectbox("预测结果", ["全部", "正确", "错误"], key="filt_correct")
+            # 真实比赛筛选
+            if "is_real_match" in df_preds.columns:
+                selected_real = filt_col5.selectbox("比赛类型", ["全部", "仅真实赛程", "仅娱乐模拟"], key="filt_real")
+            else:
+                selected_real = "全部"
+            # 预测人筛选
+            if "user_name" in df_preds.columns:
+                all_users = sorted(df_preds["user_name"].dropna().unique().tolist())
+                selected_user = filt_col6.selectbox("预测人", ["全部"] + all_users, key="filt_user")
+            else:
+                selected_user = "全部"
 
             # 应用筛选
             df_filt = df_preds.copy()
@@ -327,11 +397,18 @@ with tab_track:
                 df_filt = df_filt[df_filt["is_correct"] == 1]
             elif selected_correct == "错误":
                 df_filt = df_filt[(df_filt["is_correct"] == 0) & (df_filt["is_verified"] == 1)]
+            if selected_real == "仅真实赛程" and "is_real_match" in df_filt.columns:
+                df_filt = df_filt[df_filt["is_real_match"] == 1]
+            elif selected_real == "仅娱乐模拟" and "is_real_match" in df_filt.columns:
+                df_filt = df_filt[df_filt["is_real_match"] == 0]
+            if selected_user != "全部" and "user_name" in df_filt.columns:
+                df_filt = df_filt[df_filt["user_name"] == selected_user]
 
             st.caption(f"筛选后共 {len(df_filt)} 条记录")
 
             show_cols = ["predict_time", "match_date", "home_team", "away_team",
-                         "predict_result", "confidence", "actual_result", "is_correct", "predict_source"]
+                         "predict_result", "confidence", "actual_result", "is_correct",
+                         "predict_source", "user_name"]
             col_cn = {
                 "predict_time": "预测时间",
                 "match_date": "比赛日期",
@@ -341,10 +418,14 @@ with tab_track:
                 "confidence": "置信度",
                 "actual_result": "实际赛果",
                 "is_correct": "是否正确",
-                "predict_source": "预测来源"
+                "predict_source": "预测来源",
+                "user_name": "预测人"
             }
             available_cols = [c for c in show_cols if c in df_filt.columns]
             df_show = df_filt[available_cols].copy()
+            # 队名转中文
+            df_show["home_team"] = df_show["home_team"].map(lambda x: std_2_cn.get(x, x))
+            df_show["away_team"] = df_show["away_team"].map(lambda x: std_2_cn.get(x, x))
             df_show.columns = [col_cn.get(c, c) for c in df_show.columns]
             # 预测来源中文化
             if '预测来源' in df_show.columns:

@@ -62,24 +62,74 @@ def load_match_base_data(db_path):
     conn.close()
     return df
 
-# 保存预测结果到数据库
+# 自动迁移：确保字段存在
+def _ensure_predictions_schema(cursor):
+    cursor.execute('PRAGMA table_info(predictions)')
+    cols = [r[1] for r in cursor.fetchall()]
+    if 'is_real_match' not in cols:
+        cursor.execute('ALTER TABLE predictions ADD COLUMN is_real_match INTEGER DEFAULT 0')
+    if 'user_name' not in cols:
+        cursor.execute('ALTER TABLE predictions ADD COLUMN user_name TEXT DEFAULT NULL')
+
+# 判断是否为真实赛程中的比赛
+def _check_is_real_match(cursor, match_date, home_team, away_team, league_code):
+    cursor.execute("""
+        SELECT COUNT(*) FROM match_schedule
+        WHERE league_code = ? AND home_team = ? AND away_team = ? AND DATE(match_date) = ?
+    """, (league_code, home_team, away_team, match_date))
+    return 1 if cursor.fetchone()[0] > 0 else 0
+
+# 保存预测结果到数据库（去重：同联赛+同对阵+同日期+同用户则更新，否则插入）
 def save_prediction_to_db(
     match_date, home_team, away_team, league_code,
     prob_home, prob_draw, prob_away, predict_result, confidence,
-    predict_source="manual"
+    predict_source="manual", user_name=None
 ):
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
+        
+        # 自动迁移字段
+        _ensure_predictions_schema(cursor)
+        
+        # 判断是否真实比赛
+        is_real = _check_is_real_match(cursor, match_date, home_team, away_team, league_code)
+        
+        # 查找是否已有同一场比赛的预测记录（同用户+同联赛+同对阵+同日期去重）
         cursor.execute("""
-            INSERT INTO predictions
-            (match_date, home_team, away_team, league_code,
-             prob_home, prob_draw, prob_away, predict_result, confidence, predict_source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            match_date, home_team, away_team, league_code,
-            prob_home, prob_draw, prob_away, predict_result, confidence, predict_source
-        ))
+            SELECT id FROM predictions
+            WHERE league_code = ? AND home_team = ? AND away_team = ? AND match_date = ?
+              AND COALESCE(user_name, '') = COALESCE(?, '')
+            ORDER BY predict_time DESC LIMIT 1
+        """, (league_code, home_team, away_team, match_date, user_name))
+        existing = cursor.fetchone()
+        
+        if existing:
+            # 更新已有记录
+            pred_id = existing[0]
+            cursor.execute("""
+                UPDATE predictions SET
+                    prob_home = ?, prob_draw = ?, prob_away = ?,
+                    predict_result = ?, confidence = ?, predict_source = ?,
+                    predict_time = CURRENT_TIMESTAMP, is_real_match = ?,
+                    is_verified = 0, actual_result = NULL, is_correct = NULL,
+                    user_name = ?
+                WHERE id = ?
+            """, (prob_home, prob_draw, prob_away, predict_result, confidence,
+                  predict_source, is_real, user_name, pred_id))
+        else:
+            # 插入新记录
+            cursor.execute("""
+                INSERT INTO predictions
+                (match_date, home_team, away_team, league_code,
+                 prob_home, prob_draw, prob_away, predict_result, confidence,
+                 predict_source, is_real_match, user_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                match_date, home_team, away_team, league_code,
+                prob_home, prob_draw, prob_away, predict_result, confidence,
+                predict_source, is_real, user_name
+            ))
         conn.commit()
         conn.close()
         return True
@@ -87,7 +137,7 @@ def save_prediction_to_db(
         print(f"保存预测结果失败: {e}")
         return False
 
-def render_match_predict_panel(cn_2_std=None, std_2_cn=None):
+def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
     st.subheader("🤖 赛事胜负智能预测")
     st.warning("💡 LightGBM三分类 + 泊松进球模型 等权融合，综合攻防数据、赔率特征与进球分布预测，仅供体育数据分析参考，严禁赌博用途")
 
@@ -250,7 +300,8 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None):
                     prob_away=pred_res["prob_away_win"],
                     predict_result=pred_res["predict_result"],
                     confidence=pred_res["confidence"],
-                    predict_source="manual"
+                    predict_source="manual",
+                    user_name=user_name
                 )
             except Exception as e:
                 import traceback

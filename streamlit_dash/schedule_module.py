@@ -18,6 +18,7 @@ from streamlit_dash.feature_auto_build import build_feature_by_teams
 from feature_auto_build import get_team_recent_stats
 from team_mapping_v2 import LEAGUE_TEAM_MAP, CFG_2_DB_CODE
 from common.usage_tracker import track
+from streamlit_dash.predict_module import save_prediction_to_db
 
 # 数据库编码 -> 配置编码反向映射
 DB_2_CFG = {v: k for k, v in CFG_2_DB_CODE.items()}
@@ -144,7 +145,7 @@ def get_week_range(ref_date=None):
     return start, end
 
 
-def render_schedule_calendar():
+def render_schedule_calendar(user_name=None):
     """渲染赛事日历主面板"""
     st.subheader("📅 赛事日历")
 
@@ -265,22 +266,21 @@ def render_schedule_calendar():
                     "客胜概率": result["prob_away_win"],
                 })
 
-                # 写入数据库
+                # 写入数据库（统一走保存函数，自动去重+真实比赛标记）
                 try:
-                    conn = sqlite3.connect(DB_PATH)
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        INSERT INTO predictions
-                        (match_date, home_team, away_team, league_code,
-                         prob_home, prob_draw, prob_away, predict_result, confidence, predict_source)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'schedule_batch')
-                    """, (
-                        str(row["match_date"])[:10], home_name, away_name, row["league_code"],
-                        result["prob_home_win"], result["prob_draw"], result["prob_away_win"],
-                        result["predict_result"], result["confidence"]
-                    ))
-                    conn.commit()
-                    conn.close()
+                    save_prediction_to_db(
+                        match_date=str(row["match_date"])[:10],
+                        home_team=home_name,
+                        away_team=away_name,
+                        league_code=row["league_code"],
+                        prob_home=result["prob_home_win"],
+                        prob_draw=result["prob_draw"],
+                        prob_away=result["prob_away_win"],
+                        predict_result=result["predict_result"],
+                        confidence=result["confidence"],
+                        predict_source="schedule_batch",
+                        user_name=user_name
+                    )
                 except:
                     pass
             except:
@@ -403,23 +403,21 @@ def render_match_row(row, df_hist):
                 result = predict_match(feature)
                 st.session_state[pred_key] = result
 
-                # 保存预测结果到数据库
-                import sqlite3
+                # 保存预测结果到数据库（统一走保存函数，自动去重+真实比赛标记）
                 try:
-                    conn = sqlite3.connect(DB_PATH)
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        INSERT INTO predictions
-                        (match_date, home_team, away_team, league_code,
-                         prob_home, prob_draw, prob_away, predict_result, confidence, predict_source)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'schedule')
-                    """, (
-                        str(row["match_date"]), home_name, away_name, row["league_code"],
-                        result["prob_home_win"], result["prob_draw"], result["prob_away_win"],
-                        result["predict_result"], result["confidence"]
-                    ))
-                    conn.commit()
-                    conn.close()
+                    save_prediction_to_db(
+                        match_date=str(row["match_date"])[:10],
+                        home_team=home_name,
+                        away_team=away_name,
+                        league_code=row["league_code"],
+                        prob_home=result["prob_home_win"],
+                        prob_draw=result["prob_draw"],
+                        prob_away=result["prob_away_win"],
+                        predict_result=result["predict_result"],
+                        confidence=result["confidence"],
+                        predict_source="schedule",
+                        user_name=user_name
+                    )
                 except Exception as e:
                     pass  # 保存失败不影响展示
 
