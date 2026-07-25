@@ -10,7 +10,7 @@ import streamlit as st
 
 # 项目根目录
 SCRIPT_PATH = os.path.abspath(__file__)
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_PATH)))
+ROOT_DIR = os.path.dirname(os.path.dirname(SCRIPT_PATH))
 DB_PATH = os.path.join(ROOT_DIR, "football.db")
 
 sys.path.insert(0, ROOT_DIR)
