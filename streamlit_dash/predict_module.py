@@ -71,12 +71,12 @@ def _ensure_predictions_schema(cursor):
     if 'user_name' not in cols:
         cursor.execute('ALTER TABLE predictions ADD COLUMN user_name TEXT DEFAULT NULL')
 
-# 判断是否为真实赛程中的比赛
+# 判断是否为真实赛程中的比赛（不卡日期，只要联赛+对阵在赛程表中存在就算）
 def _check_is_real_match(cursor, match_date, home_team, away_team, league_code):
     cursor.execute("""
         SELECT COUNT(*) FROM match_schedule
-        WHERE league_code = ? AND home_team = ? AND away_team = ? AND DATE(match_date) = ?
-    """, (league_code, home_team, away_team, match_date))
+        WHERE league_code = ? AND home_team = ? AND away_team = ?
+    """, (league_code, home_team, away_team))
     return 1 if cursor.fetchone()[0] > 0 else 0
 
 # 保存预测结果到数据库（去重：同联赛+同对阵+同日期+同用户则更新，否则插入）
