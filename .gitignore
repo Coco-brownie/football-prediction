@@ -34,6 +34,7 @@ __pycache__/
 定时任务配置说明.md
 config.json
 *.json
+!model/poisson_features.json
 
 # 临时文件
 *.tmp
