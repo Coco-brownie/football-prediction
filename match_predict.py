@@ -1,0 +1,329 @@
+import pandas as pd
+import numpy as np
+import math
+# 【2026-07-23 移除：import joblib，改用原生lgb加载模型】
+import lightgbm as lgb
+import joblib
+import os
+
+ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
+MODEL_DIR = os.path.join(ROOT_PATH, "model")
+
+
+# 【2026-07-24 新增：平局率特征4维，总计34维】
+FEATURE_COLS = [
+    "h5_gf","h5_ga","h5_shot","h5_shot_ot",
+    "h10_gf","h10_ga",
+    "a5_gf","a5_ga","a5_shot","a5_shot_ot",
+    "a10_gf","a10_ga",
+    "odds_draw_real","odds_lose_real",
+    "shot_on_diff",
+    "h2h_cnt", "h2h_home_win_rate", "h2h_draw_rate", "h2h_home_gf_avg", "h2h_home_ga_avg",
+    "prob_ratio_ha", "prob_draw_share", "prob_max", "prob_entropy", "prob_home_favorite",
+    "home_draw_rate_5", "home_draw_rate_10", "away_draw_rate_5", "away_draw_rate_10",
+    "league_SER","league_E0","league_D1","league_LIG","league_LLA"
+]
+
+# 泊松模型特征（14维）
+POISSON_FEATURES = [
+    "h5_gf", "h5_ga", "a5_gf", "a5_ga",
+    "h10_gf", "h10_ga", "a10_gf", "a10_ga",
+    "league_SER", "league_E0", "league_D1", "league_LIG", "league_LLA",
+    "shot_on_diff"
+]
+# 硬编码索引（与训练时GOAL_FEATURES严格对齐），避免FEATURE_COLS变化导致错位
+# 顺序：h5_gf, h5_ga, a5_gf, a5_ga, h10_gf, h10_ga, a10_gf, a10_ga, league_*5, shot_on_diff
+POISSON_FEAT_IDX = [0, 1, 6, 7, 4, 5, 10, 11, 29, 30, 31, 32, 33, 14]
+
+# 融合权重：LGB 70% + 泊松 15% + 平局专项 15%（三模型融合）
+FUSION_WEIGHT_LGB = 0.7
+FUSION_WEIGHT_POISSON = 0.15
+FUSION_WEIGHT_DRAW = 0.15
+
+# 【2026-07-24 新增：联赛独立模型 29维特征（去掉联赛独热）】
+LEAGUE_FEATURE_COLS = [
+    "h5_gf","h5_ga","h5_shot","h5_shot_ot",
+    "h10_gf","h10_ga",
+    "a5_gf","a5_ga","a5_shot","a5_shot_ot",
+    "a10_gf","a10_ga",
+    "odds_draw_real","odds_lose_real",
+    "shot_on_diff",
+    "h2h_cnt", "h2h_home_win_rate", "h2h_draw_rate", "h2h_home_gf_avg", "h2h_home_ga_avg",
+    "prob_ratio_ha", "prob_draw_share", "prob_max", "prob_entropy", "prob_home_favorite",
+    "home_draw_rate_5", "home_draw_rate_10", "away_draw_rate_5", "away_draw_rate_10",
+]
+
+# 联赛模型缓存
+_league_model_cache = {}
+
+# 【2026-07-24 优化：客场模型特征互换不完整，融合反而降准，改用单主场模型】
+home_model = lgb.Booster(model_file=os.path.join(MODEL_DIR, "home_model.pkl"))
+
+# 【2026-07-24 新增：泊松进球模型，与LGB等权融合提升胜平负准确率】
+poisson_home_model = joblib.load(os.path.join(MODEL_DIR, "poisson_home_goals.pkl"))
+poisson_away_model = joblib.load(os.path.join(MODEL_DIR, "poisson_away_goals.pkl"))
+
+# 【2026-07-25 新增：平局二分类专项模型，提升平局召回】
+draw_binary_model = joblib.load(os.path.join(MODEL_DIR, "draw_binary_model.pkl"))
+
+
+def calc_score_matrix(h_lam, a_lam, max_goals=8):
+    """计算所有比分的概率矩阵（泊松独立假设）"""
+    scores = {}
+    for h in range(max_goals + 1):
+        for a in range(max_goals + 1):
+            ph = (h_lam ** h) * math.exp(-h_lam) / math.factorial(h)
+            pa = (a_lam ** a) * math.exp(-a_lam) / math.factorial(a)
+            scores[f"{h}-{a}"] = float(ph * pa)
+    return scores
+
+
+def calc_over_under(h_lam, a_lam, lines=[1.5, 2.5, 3.5, 4.5]):
+    """计算多档位大小球概率"""
+    total_lam = h_lam + a_lam
+    results = {}
+    for line in lines:
+        under_prob = 0.0
+        for goals in range(int(line) + 1):
+            under_prob += (total_lam ** goals) * math.exp(-total_lam) / math.factorial(goals)
+        results[f"大球{line}"] = float(1 - under_prob)
+        results[f"小球{line}"] = float(under_prob)
+    return results
+
+
+def get_top_scores(scores, top_n=5):
+    """获取概率最高的TOP N比分"""
+    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    return sorted_scores[:top_n]
+
+
+def calc_poisson_1x2(feature_array):
+    """泊松进球预测 → 转胜平负概率"""
+    X = np.array(feature_array, dtype=np.float64).reshape(1, -1)
+    X_poi = X[:, POISSON_FEAT_IDX]
+
+    h_lam = float(poisson_home_model.predict(X_poi)[0])
+    a_lam = float(poisson_away_model.predict(X_poi)[0])
+    h_lam = max(min(h_lam, 10.0), 0.3)
+    a_lam = max(min(a_lam, 10.0), 0.3)
+
+    p_home = 0.0
+    p_draw = 0.0
+    p_away = 0.0
+    for h in range(9):
+        for a in range(9):
+            p_h = (h_lam ** h) * math.exp(-h_lam) / math.factorial(h)
+            p_a = (a_lam ** a) * math.exp(-a_lam) / math.factorial(a)
+            prob = p_h * p_a
+            if h > a:
+                p_home += prob
+            elif h == a:
+                p_draw += prob
+            else:
+                p_away += prob
+
+    total = p_home + p_draw + p_away
+    if total < 1e-8:
+        # 兜底：泊松计算异常时返回均匀分布
+        return np.array([1/3, 1/3, 1/3])
+    return np.array([p_home / total, p_draw / total, p_away / total])
+
+
+def load_league_model(league_cfg_code):
+    """加载指定联赛的独立模型（懒加载+缓存）
+    返回 (home_model, away_model)，不存在返回 (None, None)
+    """
+    if league_cfg_code in _league_model_cache:
+        return _league_model_cache[league_cfg_code]
+
+    home_path = os.path.join(MODEL_DIR, f"league_{league_cfg_code}_home.pkl")
+    away_path = os.path.join(MODEL_DIR, f"league_{league_cfg_code}_away.pkl")
+
+    if not os.path.exists(home_path) or not os.path.exists(away_path):
+        _league_model_cache[league_cfg_code] = (None, None)
+        return None, None
+
+    import pickle
+    with open(home_path, "rb") as f:
+        h_model = pickle.load(f)
+    with open(away_path, "rb") as f:
+        a_model = pickle.load(f)
+
+    _league_model_cache[league_cfg_code] = (h_model, a_model)
+    return h_model, a_model
+
+def predict_match(feature_array, is_home_scene: bool = True):
+    # 直接转为2维float numpy数组，彻底规避pandas dtype问题
+    X = np.array(feature_array, dtype=np.float64).reshape(1, -1)
+    # 【2026-07-23 整改3：空值、正负无穷兜底，避免推理异常】
+    X = np.nan_to_num(X, nan=0.0, posinf=999.0, neginf=-999.0)
+    # 【2026-07-23 整改4：特征维度强校验，提前拦截特征漏传/多传/错位】
+    expect_feature_cnt = len(FEATURE_COLS)
+    assert X.shape[1] == expect_feature_cnt, \
+        f"特征数量不符，预期{expect_feature_cnt}维，实际{X.shape[1]}维，请核对上游特征构造"
+    prob_lgb = home_model.predict(X, num_iteration=home_model.best_iteration)[0]
+    prob_poisson = calc_poisson_1x2(feature_array)
+    # 平局二分类预测
+    prob_draw_binary = float(draw_binary_model.predict_proba(X)[0][1])
+    
+    # 三模型融合：主胜/客胜 = LGB + 泊松；平局 = LGB + 泊松 + 平局专项
+    prob_h = prob_lgb[0] * FUSION_WEIGHT_LGB + prob_poisson[0] * FUSION_WEIGHT_POISSON
+    prob_a = prob_lgb[2] * FUSION_WEIGHT_LGB + prob_poisson[2] * FUSION_WEIGHT_POISSON
+    prob_d = prob_lgb[1] * FUSION_WEIGHT_LGB + prob_poisson[1] * FUSION_WEIGHT_POISSON + prob_draw_binary * FUSION_WEIGHT_DRAW
+    
+    # 归一化
+    tot = prob_h + prob_d + prob_a
+    if tot < 1e-8:
+        tot = 1.0
+    prob_final = np.array([prob_h / tot, prob_d / tot, prob_a / tot])
+
+    # 泊松进球期望值（用于比分/大小球预测）
+    X_poi = X[:, POISSON_FEAT_IDX]
+    h_lam = float(poisson_home_model.predict(X_poi)[0])
+    a_lam = float(poisson_away_model.predict(X_poi)[0])
+    h_lam = max(min(h_lam, 10.0), 0.3)
+    a_lam = max(min(a_lam, 10.0), 0.3)
+
+    label_idx = int(np.argmax(prob_final))
+    label_map = {0:"主胜",1:"平局",2:"客胜"}
+    pred_label = label_map[label_idx]
+    confidence = round(float(np.max(prob_final)),4)
+
+    # 比分预测 + 大小球
+    score_matrix = calc_score_matrix(h_lam, a_lam)
+    top_scores = get_top_scores(score_matrix, top_n=5)
+    over_under = calc_over_under(h_lam, a_lam)
+    expected_goals = {
+        'home_expected': round(float(h_lam), 2),
+        'away_expected': round(float(a_lam), 2),
+        'total_expected': round(float(h_lam + a_lam), 2)
+    }
+
+    result = {
+        "prob_home_win": round(float(prob_final[0]),4),
+        "prob_draw": round(float(prob_final[1]),4),
+        "prob_away_win": round(float(prob_final[2]),4),
+        "predict_result": pred_label,
+        "confidence": confidence,
+        "expected_goals": expected_goals,
+        "top_scores": top_scores,
+        "over_under": over_under,
+        "model_detail":{
+            "lgb_prob": np.round(prob_lgb, 4).tolist(),
+            "poisson_prob": np.round(prob_poisson, 4).tolist(),
+            "fusion_weight": f"LGB {FUSION_WEIGHT_LGB:.0%} + 泊松 {FUSION_WEIGHT_POISSON:.0%} + 平局专项 {FUSION_WEIGHT_DRAW:.0%}"
+        }
+    }
+    return result
+
+if __name__ == "__main__":
+    # 34维测试样本（英超）
+    sample_feature = [
+        8, 5, 42, 18,      # h5_gf, h5_ga, h5_shot, h5_shot_ot
+        16, 11,             # h10_gf, h10_ga
+        6, 7, 36, 14,      # a5_gf, a5_ga, a5_shot, a5_shot_ot
+        13, 15,             # a10_gf, a10_ga
+        0.25, 0.30,        # odds_draw_real, odds_lose_real
+        4,                  # shot_on_diff
+        5, 0.55, 0.25, 1.8, 1.2,  # h2h_cnt, win_rate, draw_rate, gf_avg, ga_avg
+        1.5, 0.28, 0.48, 0.9, 1,  # prob_ratio_ha, draw_share, prob_max, entropy, home_fav
+        0.3, 0.28, 0.25, 0.27,    # 平局率4维
+        0, 1, 0, 0, 0      # 联赛独热：英超E0
+    ]
+    res = predict_match(sample_feature, is_home_scene=True)
+    for k,v in res.items():
+        print(f"{k}: {v}")
+
+def predict_match_league(feature_array_29, league_cfg_code, is_home_scene: bool = True):
+    """使用联赛独立模型预测（29维特征，不含联赛独热）
+    若该联赛模型不存在，返回 None，调用方 fallback 到全局模型
+    """
+    h_model, _ = load_league_model(league_cfg_code)
+    if h_model is None:
+        return None
+
+    X = np.array(feature_array_29, dtype=np.float64).reshape(1, -1)
+    X = np.nan_to_num(X, nan=0.0, posinf=999.0, neginf=-999.0)
+
+    expect_cnt = len(LEAGUE_FEATURE_COLS)
+    assert X.shape[1] == expect_cnt, f'联赛模型特征数量不符，预期{expect_cnt}维'
+
+    prob_lgb = h_model.predict_proba(X)[0]
+
+    # 构造泊松模型输入（从29维特征中提取 + 联赛独热）
+    league_onehot = {
+        "EPL": [0, 1, 0, 0, 0],   # league_E0
+        "BUN": [0, 0, 1, 0, 0],   # league_D1
+        "LLA": [0, 0, 0, 0, 1],   # league_LLA
+        "SER": [1, 0, 0, 0, 0],   # league_SER
+        "LIG": [0, 0, 0, 1, 0],   # league_LIG
+    }
+    feat_29 = feature_array_29
+    # 基础特征索引：h5_gf, h5_ga, a5_gf, a5_ga, h10_gf, h10_ga, a10_gf, a10_ga, shot_on_diff
+    base_idx = [0, 1, 6, 7, 4, 5, 10, 11, 14]
+    poi_base = [feat_29[i] for i in base_idx]
+    poi_feats = poi_base + league_onehot.get(league_cfg_code, [0,0,0,0,0])
+
+    h_lam = max(float(poisson_home_model.predict([poi_feats])[0]), 0.3)
+    a_lam = max(float(poisson_away_model.predict([poi_feats])[0]), 0.3)
+
+    # 泊松转胜平负
+    p_h = p_d = p_a = 0.0
+    for h in range(9):
+        for a in range(9):
+            ph = (h_lam ** h) * math.exp(-h_lam) / math.factorial(h)
+            pa = (a_lam ** a) * math.exp(-a_lam) / math.factorial(a)
+            p = ph * pa
+            if h > a: p_h += p
+            elif h == a: p_d += p
+            else: p_a += p
+    tot = p_h + p_d + p_a
+    prob_poisson = np.array([p_h/tot, p_d/tot, p_a/tot])
+
+    # 三模型融合：主胜/客胜 = LGB + 泊松；平局 = LGB + 泊松 + 平局专项
+    # 构造34维特征给平局二分类模型（29维 + 联赛独热5维）
+    draw_feats = list(feature_array_29) + league_onehot.get(league_cfg_code, [0,0,0,0,0])
+    prob_draw_binary = float(draw_binary_model.predict_proba([draw_feats])[0][1])
+    
+    prob_h = prob_lgb[0] * FUSION_WEIGHT_LGB + prob_poisson[0] * FUSION_WEIGHT_POISSON
+    prob_a = prob_lgb[2] * FUSION_WEIGHT_LGB + prob_poisson[2] * FUSION_WEIGHT_POISSON
+    prob_d = prob_lgb[1] * FUSION_WEIGHT_LGB + prob_poisson[1] * FUSION_WEIGHT_POISSON + prob_draw_binary * FUSION_WEIGHT_DRAW
+    
+    # 归一化
+    tot = prob_h + prob_d + prob_a
+    if tot < 1e-8:
+        tot = 1.0
+    prob_final = np.array([prob_h / tot, prob_d / tot, prob_a / tot])
+
+    label_idx = int(np.argmax(prob_final))
+    label_map = {0: '主胜', 1: '平局', 2: '客胜'}
+    pred_label = label_map[label_idx]
+    confidence = round(float(np.max(prob_final)), 4)
+
+    # 比分预测 + 大小球
+    score_matrix = calc_score_matrix(h_lam, a_lam)
+    top_scores = get_top_scores(score_matrix, top_n=5)
+    over_under = calc_over_under(h_lam, a_lam)
+    expected_goals = {
+        'home_expected': round(float(h_lam), 2),
+        'away_expected': round(float(a_lam), 2),
+        'total_expected': round(float(h_lam + a_lam), 2)
+    }
+
+    return {
+        'prob_home_win': round(float(prob_final[0]), 4),
+        'prob_draw': round(float(prob_final[1]), 4),
+        'prob_away_win': round(float(prob_final[2]), 4),
+        'predict_result': pred_label,
+        'confidence': confidence,
+        'model_type': 'league_independent',
+        'league': league_cfg_code,
+        'expected_goals': expected_goals,
+        'top_scores': top_scores,
+        'over_under': over_under,
+        'model_detail': {
+            'lgb_prob': np.round(prob_lgb, 4).tolist(),
+            'poisson_prob': np.round(prob_poisson, 4).tolist(),
+            'fusion_weight': f'LGB {FUSION_WEIGHT_LGB:.0%} + 泊松 {FUSION_WEIGHT_POISSON:.0%} + 平局专项 {FUSION_WEIGHT_DRAW:.0%}'
+        }
+    }

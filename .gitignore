@@ -1,0 +1,56 @@
+# ========== 全部排除，再单独包含需要的 ==========
+
+# 排除所有根目录py文件（除了指定的几个）
+/*.py
+!/match_predict.py
+!/team_mapping_v2.py
+
+# 开发脚本与归档
+_dev_scripts/
+_full_backup_*/
+exe_package/
+model/_deprecated/
+model_backup_*/
+
+# 原始数据
+csv_data/
+footballmatchdate/
+matchdate2009-2026/
+update_input/
+
+# 日志与缓存
+logs/
+__pycache__/
+*.pyc
+*.pyo
+.vscode/
+.idea/
+
+# 本地启动脚本
+*.bat
+*.lnk
+
+# 本地配置
+定时任务配置说明.md
+config.json
+*.json
+
+# 临时文件
+*.tmp
+*.log
+*.csv
+feature_desc.md
+league_scaler.pkl
+
+# 数据库备份
+*_backup_*.db
+
+# 旧模型与联赛独立模型
+model/*class_weight*
+model/*feat_import*
+model/lgb_*
+model/league_*
+model/*timesplit*
+
+# streamlit目录下的测试db
+streamlit_dash/football.db
