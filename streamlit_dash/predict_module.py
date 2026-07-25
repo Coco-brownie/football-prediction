@@ -6,10 +6,12 @@ import pandas as pd
 import sqlite3
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.append(ROOT_DIR)
+CUR_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, ROOT_DIR)
+sys.path.insert(0, CUR_DIR)
 from match_predict import predict_match, FEATURE_COLS, POISSON_FEAT_IDX
 from feature_auto_build import build_feature_by_teams
-from common_style import style_match_result_df
+from common.style import style_match_result_df
 from team_mapping_v2 import LEAGUE_CFG, cfg_to_db_league
 from common.usage_tracker import track
 
