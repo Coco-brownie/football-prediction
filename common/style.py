@@ -104,6 +104,41 @@ def apply_global_style():
         border-radius: 8px;
         overflow: hidden;
     }
+
+    /* ========== 移动端适配 ========== */
+    @media (max-width: 768px) {
+        h1 { font-size: 1.5rem; }
+        h2 { font-size: 1.2rem; padding-left: 8px; border-left-width: 3px; }
+        h3 { font-size: 1rem; }
+
+        [data-testid="stMetric"] {
+            padding: 8px 10px;
+            border-radius: 8px;
+        }
+        [data-testid="stMetricValue"] {
+            font-size: 1.15rem;
+        }
+        [data-testid="stMetricLabel"] {
+            font-size: 0.75rem;
+        }
+
+        .stButton > button {
+            width: 100%;
+            padding: 0.5rem;
+        }
+
+        [data-testid="stTabs"] [role="tab"] {
+            font-size: 0.8rem;
+            padding: 0.5rem 0.3rem;
+        }
+    }
+
+    @media (max-width: 480px) {
+        h1 { font-size: 1.25rem; }
+        [data-testid="stMetricValue"] {
+            font-size: 1rem;
+        }
+    }
     </style>
     """, unsafe_allow_html=True)
 
