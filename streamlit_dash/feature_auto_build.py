@@ -1,7 +1,9 @@
 import pandas as pd
 import numpy as np
+import sqlite3
+import os
 
-# 完整20维特征，与 match_predict.py / twin_lgb_train.py 全局统一
+# 完整37维特征（34基础 + 3 ELO），与 match_predict.py 全局统一
 FEATURE_COLS = [
     "h5_gf","h5_ga","h5_shot","h5_shot_ot",
     "h10_gf","h10_ga",
@@ -9,7 +11,11 @@ FEATURE_COLS = [
     "a10_gf","a10_ga",
     "odds_draw_real","odds_lose_real",
     "shot_on_diff",
-    "league_SER","league_E0","league_D1","league_LIG","league_LLA"
+    "h2h_cnt", "h2h_home_win_rate", "h2h_draw_rate", "h2h_home_gf_avg", "h2h_home_ga_avg",
+    "prob_ratio_ha", "prob_draw_share", "prob_max", "prob_entropy", "prob_home_favorite",
+    "home_draw_rate_5", "home_draw_rate_10", "away_draw_rate_5", "away_draw_rate_10",
+    "league_SER","league_E0","league_D1","league_LIG","league_LLA",
+    "home_elo_before", "away_elo_before", "elo_diff_before",
 ]
 
 # 联赛编码 → 5个独热位的映射（顺序严格对齐训练时的 LEAGUE_FIX_COLS）
@@ -20,6 +26,47 @@ LEAGUE_ONEHOT_MAP = {
     "LIG": [0, 0, 0, 1, 0],
     "LLA": [0, 0, 0, 0, 1],
 }
+
+# ELO缓存
+_elo_cache = None
+
+def _get_elo_cache():
+    """懒加载ELO缓存：从match_elo表取每支球队最新ELO"""
+    global _elo_cache
+    if _elo_cache is not None:
+        return _elo_cache
+    
+    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "football.db")
+    if not os.path.exists(db_path):
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "football.db")
+    
+    conn = sqlite3.connect(db_path)
+    df = pd.read_sql("""
+        SELECT league_code, home_team_std as team, home_elo_before as elo, match_date
+        FROM match_elo
+        UNION ALL
+        SELECT league_code, away_team_std as team, away_elo_before as elo, match_date
+        FROM match_elo
+    """, conn)
+    conn.close()
+    
+    df["match_date"] = pd.to_datetime(df["match_date"])
+    df = df.sort_values("match_date")
+    
+    _elo_cache = {}
+    for league in df["league_code"].unique():
+        league_df = df[df["league_code"] == league]
+        latest = league_df.groupby("team").last()["elo"].to_dict()
+        _elo_cache[league] = latest
+    
+    return _elo_cache
+
+
+def get_team_elo(team_std, league_code):
+    """获取一支球队的当前ELO评分"""
+    cache = _get_elo_cache()
+    league_elos = cache.get(league_code, {})
+    return league_elos.get(team_std, 1500.0)
 
 def get_team_recent_stats(df_filter, team_name, recent_n):
     # 自动兼容列名：优先 _std 后缀，回退原生列名
@@ -166,6 +213,12 @@ def build_feature_by_teams(df_full, home_team, away_team, draw_odds, away_odds, 
     league_feat = LEAGUE_ONEHOT_MAP.get(league_code, [0, 0, 0, 0, 0])
 
     result = base_feat + league_feat
+    
+    # ELO特征（3维）
+    home_elo = get_team_elo(home_team, league_code)
+    away_elo = get_team_elo(away_team, league_code)
+    elo_diff = home_elo - away_elo
+    result += [home_elo, away_elo, elo_diff]
 
     # 可选：追加身价特征（5维）
     if use_value_features and league_cfg_code:

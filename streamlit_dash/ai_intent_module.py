@@ -1,6 +1,7 @@
 """
-AI下注意愿计算模块
-对给定比赛，计算三个AI是否会出手、共识度等级
+AI出手建议计算模块
+对给定比赛，计算三个AI是否建议出手、共识度等级
+（模型验证工具，非投注建议）
 """
 import sys
 import os
@@ -20,15 +21,15 @@ AI_CONFIGS = {
 
 def calc_ai_bet_intent(pred_confidence, pred_result, odds=None):
     """
-    计算三个AI对单场比赛的下注意愿
+    计算三个AI对单场比赛的出手建议
     
     参数:
         pred_confidence: 模型预测置信度 (0-1)
         pred_result: 预测方向 ('主队胜' / '平局' / '客队胜')
-        odds: 对应方向的赔率（可选，价值投注判断用）
+        odds: 对应方向的市场概率（可选，置信度优势判断用）
     
     返回:
-        dict: 每个AI的出手意愿 + 共识等级
+        dict: 每个AI的出手建议 + 共识等级
     """
     intents = {}
     bet_count = 0
@@ -42,7 +43,7 @@ def calc_ai_bet_intent(pred_confidence, pred_result, odds=None):
             will_bet = False
             reason = f"置信度不足（需≥{cfg['min_confidence']:.0%}）"
         
-        # 价值投注（需要赔率）
+        # 置信度优势判断（需要市场概率）
         if will_bet and cfg["require_value"] and odds and odds > 0:
             implied_prob = 1.0 / odds
             margin = cfg.get("value_margin", 1.0)

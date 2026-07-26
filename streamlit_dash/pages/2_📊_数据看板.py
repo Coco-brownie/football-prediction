@@ -528,6 +528,7 @@ else:
         "league_code": "联赛编码", "league_code_raw": "联赛编码", "league_cfg": "联赛配置",
         "season_year": "赛季", "match_date": "比赛日期", "Time": "开赛时间",
         "home_team": "主队", "away_team": "客队",
+        "home_team_std": "主队(标准名)", "away_team_std": "客队(标准名)",
         "match_result": "赛果", "home_goals": "主队进球", "away_goals": "客队进球",
         "HS": "主队射门", "AwayShot": "客队射门", "HST": "主队射正", "AST": "客队射正",
         "real_h_prob": "主胜赔率概率", "real_d_prob": "平局赔率概率", "real_a_prob": "客胜赔率概率",
@@ -562,7 +563,27 @@ else:
     if "客队" in df_show.columns:
         df_show["客队"] = df_show["客队"].map(lambda x: std_2_cn.get(x, x))
 
-st.dataframe(df_show, use_container_width=True, height=400)
+# 按比赛日期倒序排列（最新在前）
+date_col = "比赛日期" if "比赛日期" in df_show.columns else "match_date"
+if date_col in df_show.columns:
+    df_show = df_show.sort_values(date_col, ascending=False).reset_index(drop=True)
+
+# 列宽优化：数字列窄一点，文本列自适应
+col_config = {}
+try:
+    for col in df_show.columns:
+        if pd.api.types.is_numeric_dtype(df_show[col]):
+            col_config[col] = st.column_config.NumberColumn(col, width="small")
+        elif col in ["比赛日期", "match_date"]:
+            col_config[col] = st.column_config.DateColumn(col, width="small")
+except Exception:
+    # 列宽配置失败时降级到默认
+    col_config = None
+
+if col_config:
+    st.dataframe(df_show, use_container_width=True, height=400, column_config=col_config)
+else:
+    st.dataframe(df_show, use_container_width=True, height=400)
 st.caption(f"共 {len(df_filter):,} 条记录")
 
 st.divider()
@@ -614,13 +635,54 @@ with st.expander("⚙️ 模型信息（高级）", expanded=False):
     st.dataframe(league_rank, hide_index=True, use_container_width=True)
     
     st.divider()
+    st.markdown("##### 模型特征重要性 TOP10")
+    st.caption("LightGBM模型全局增益重要性，数值越大代表该特征对预测结果影响越大")
+    try:
+        from match_predict import home_model, FEATURE_COLS
+        FEATURE_CN = {
+            "h5_gf": "主队近5场进球", "h5_ga": "主队近5场失球",
+            "h5_shot": "主队近5场射门", "h5_shot_ot": "主队近5场射正",
+            "h10_gf": "主队近10场进球", "h10_ga": "主队近10场失球",
+            "a5_gf": "客队近5场进球", "a5_ga": "客队近5场失球",
+            "a5_shot": "客队近5场射门", "a5_shot_ot": "客队近5场射正",
+            "a10_gf": "客队近10场进球", "a10_ga": "客队近10场失球",
+            "odds_draw_real": "平局赔率偏离", "odds_lose_real": "客胜赔率偏离",
+            "shot_on_diff": "射正率差异",
+            "h2h_cnt": "交锋场次", "h2h_home_win_rate": "交锋主队胜率",
+            "h2h_draw_rate": "交锋平局率", "h2h_home_gf_avg": "交锋主队进球",
+            "h2h_home_ga_avg": "交锋主队失球",
+            "prob_ratio_ha": "主客胜概率比", "prob_draw_share": "平局概率占比",
+            "prob_max": "概率集中度", "prob_entropy": "概率不确定性",
+            "prob_home_favorite": "主队热门度",
+            "home_draw_rate_5": "主队近5场平局率", "home_draw_rate_10": "主队近10场平局率",
+            "away_draw_rate_5": "客队近5场平局率", "away_draw_rate_10": "客队近10场平局率",
+            "league_SER": "联赛-意甲", "league_E0": "联赛-英超",
+            "league_D1": "联赛-德甲", "league_LIG": "联赛-法甲", "league_LLA": "联赛-西甲",
+            "home_elo_before": "主队赛前ELO", "away_elo_before": "客队赛前ELO",
+            "elo_diff_before": "赛前ELO差值",
+        }
+        gain_imp = home_model.feature_importance(importance_type='gain')
+        total = gain_imp.sum()
+        imp_pct = gain_imp / total * 100
+        feat_imp = list(zip(FEATURE_COLS, imp_pct))
+        feat_imp.sort(key=lambda x: x[1], reverse=True)
+        top10 = feat_imp[:10]
+        imp_df = pd.DataFrame([
+            {"排名": i+1, "特征名称": FEATURE_CN.get(f, f), "权重占比": f"{p:.2f}%"}
+            for i, (f, p) in enumerate(top10)
+        ])
+        st.dataframe(imp_df, hide_index=True, use_container_width=True)
+    except Exception as e:
+        st.caption(f"特征重要性加载失败：{str(e)}")
+    
+    st.divider()
     st.markdown("##### 置信度 vs 实际准确率（OOS真实数据）")
-    st.caption("模型输出的置信度与真实胜率的对应关系，投注决策的核心参考")
+    st.caption("模型输出的置信度与真实准确率的对应关系，模型验证的核心参考")
     conf_acc_df = pd.DataFrame([
         {"置信度区间": "< 40%", "场次占比": "6.2%", "实际准确率": "35.5%", "参考建议": "避免出手"},
         {"置信度区间": "40-50%", "场次占比": "20.6%", "实际准确率": "42.5%", "参考建议": "谨慎观察"},
         {"置信度区间": "50-60%", "场次占比": "17.6%", "实际准确率": "51.1%", "参考建议": "轻仓试探"},
-        {"置信度区间": "60-70%", "场次占比": "14.1%", "实际准确率": "61.5%", "参考建议": "正常下注"},
+        {"置信度区间": "60-70%", "场次占比": "14.1%", "实际准确率": "61.5%", "参考建议": "可验证"},
         {"置信度区间": "70-80%", "场次占比": "12.9%", "实际准确率": "72.3%", "参考建议": "重点关注"},
         {"置信度区间": "≥ 80%", "场次占比": "28.6%", "实际准确率": "89.1%", "参考建议": "重仓出击"},
     ])

@@ -9,11 +9,121 @@ ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CUR_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT_DIR)
 sys.path.insert(0, CUR_DIR)
-from match_predict import predict_match, FEATURE_COLS, POISSON_FEAT_IDX
+from match_predict import predict_match, FEATURE_COLS, POISSON_FEAT_IDX, home_model
 from feature_auto_build import build_feature_by_teams
 from common.style import style_match_result_df
 from team_mapping_v2 import LEAGUE_CFG, cfg_to_db_league
 from common.usage_tracker import track
+
+# ==================== SHAP 特征贡献解释 ====================
+# 特征名中文映射
+FEATURE_CN_MAP = {
+    "h5_gf": "主队近5场进球",
+    "h5_ga": "主队近5场失球",
+    "h5_shot": "主队近5场射门",
+    "h5_shot_ot": "主队近5场射正",
+    "h10_gf": "主队近10场进球",
+    "h10_ga": "主队近10场失球",
+    "a5_gf": "客队近5场进球",
+    "a5_ga": "客队近5场失球",
+    "a5_shot": "客队近5场射门",
+    "a5_shot_ot": "客队近5场射正",
+    "a10_gf": "客队近10场进球",
+    "a10_ga": "客队近10场失球",
+    "odds_draw_real": "平局赔率偏离",
+    "odds_lose_real": "客胜赔率偏离",
+    "shot_on_diff": "射正率差异",
+    "h2h_cnt": "交锋场次",
+    "h2h_home_win_rate": "交锋主队胜率",
+    "h2h_draw_rate": "交锋平局率",
+    "h2h_home_gf_avg": "交锋主队进球",
+    "h2h_home_ga_avg": "交锋主队失球",
+    "prob_ratio_ha": "主客胜概率比",
+    "prob_draw_share": "平局概率占比",
+    "prob_max": "最大概率集中度",
+    "prob_entropy": "概率不确定性",
+    "prob_home_favorite": "主队热门度",
+    "home_draw_rate_5": "主队近5场平局率",
+    "home_draw_rate_10": "主队近10场平局率",
+    "away_draw_rate_5": "客队近5场平局率",
+    "away_draw_rate_10": "客队近10场平局率",
+    "league_SER": "联赛-意甲",
+    "league_E0": "联赛-英超",
+    "league_D1": "联赛-德甲",
+    "league_LIG": "联赛-法甲",
+    "league_LLA": "联赛-西甲",
+}
+
+# SHAP解释器（延迟初始化）
+_shap_explainer = None
+_shap_available = None
+
+def _get_shap_explainer():
+    global _shap_explainer, _shap_available
+    if _shap_available is not None:
+        return _shap_explainer
+    try:
+        import shap
+        _shap_explainer = shap.TreeExplainer(home_model)
+        _shap_available = True
+        return _shap_explainer
+    except ImportError:
+        _shap_available = False
+        return None
+
+def calc_feature_contributions(feature_array):
+    """
+    计算单场预测的特征贡献度（优先SHAP，降级用增益近似）
+    返回: (pos_list, neg_list, summary_text)
+    pos_list: [(cn_name, value), ...] 正向Top3
+    neg_list: [(cn_name, value), ...] 负向Top3
+    summary_text: 一句话总结
+    """
+    feat_names = FEATURE_COLS
+    X = np.array(feature_array, dtype=np.float64).reshape(1, -1)
+    
+    # 尝试用 SHAP
+    explainer = _get_shap_explainer()
+    if explainer is not None:
+        shap_values = explainer.shap_values(X)
+        # 二分类取正类SHAP值
+        if isinstance(shap_values, list):
+            sv = shap_values[1][0]
+        else:
+            sv = shap_values[0]
+        contributions = sv
+    else:
+        # 降级：用特征重要性 * 特征值符号 近似（不太准但能用）
+        gain_imp = home_model.feature_importance(importance_type='gain')
+        gain_imp = gain_imp / gain_imp.sum()
+        # 简单用特征值正负方向乘权重近似
+        contributions = gain_imp * np.sign(X[0])
+    
+    # 配对中文名
+    feat_contrib = []
+    for i, name in enumerate(feat_names):
+        cn = FEATURE_CN_MAP.get(name, name)
+        feat_contrib.append((cn, float(contributions[i])))
+    
+    # 按贡献值排序
+    feat_contrib.sort(key=lambda x: x[1], reverse=True)
+    
+    # 正向Top3（值>0）
+    pos_list = [x for x in feat_contrib if x[1] > 0][:3]
+    # 负向Top3（值<0，按绝对值排）
+    neg_list = sorted([x for x in feat_contrib if x[1] < 0], key=lambda x: x[1])[:3]
+    
+    # 生成总结
+    if pos_list and neg_list:
+        top_pos = pos_list[0][0]
+        top_neg = neg_list[0][0]
+        summary_text = f"核心驱动：{top_pos}；主要风险：{top_neg}"
+    elif pos_list:
+        summary_text = f"核心驱动：{pos_list[0][0]}"
+    else:
+        summary_text = "特征贡献均衡，无明显主导因素"
+    
+    return pos_list, neg_list, summary_text
 
 # 泊松进球模型
 import joblib
@@ -139,7 +249,7 @@ def save_prediction_to_db(
 
 def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
     st.subheader("🤖 赛事胜负智能预测")
-    st.warning("💡 LightGBM三分类 + 泊松进球模型 等权融合，综合攻防数据、赔率特征与进球分布预测，仅供体育数据分析参考，严禁赌博用途")
+    st.warning("💡 LightGBM三分类 + 泊松进球模型 融合预测，综合攻防数据、市场特征与进球分布，仅供体育数据分析与模型验证参考，严禁用于其他用途")
 
     # 默认主队主场（日常预测用不到切换）
     is_home = True
@@ -218,7 +328,7 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
         st.warning("⚠️ 主队和客队不能选择同一支球队，请重新挑选")
         return
 
-    st.subheader("📊 输入赛前赔率")
+    st.subheader("📊 输入市场概率（可选）")
     col1, col2, col3 = st.columns(3)
     with col1:
         home_odds_input = st.number_input(
@@ -359,7 +469,7 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
         ev_a, kelly_a = calc_value(model_away, away_odds_input)
 
         # 详细表格（二级折叠）
-        with st.expander("📋 价值投注明细（点击展开）", expanded=False):
+        with st.expander("📋 置信度对比分析（点击展开）", expanded=False):
             value_df = pd.DataFrame({
                 "赛果": ["主胜", "平局", "客胜"],
             "模型概率": [f"{model_home:.1%}", f"{model_draw:.1%}", f"{model_away:.1%}"],
@@ -376,36 +486,36 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
         best_name, best_ev, best_kelly = best
 
         if best_ev > 0.08:
-            value_level = "🟢 高价值投注"
-            value_desc = f"模型显著看好{best_name}，期望值+{best_ev:.1%}，价值空间充足"
+            value_level = "🟢 显著置信度优势"
+            value_desc = f"模型显著看好{best_name}，置信度差值+{best_ev:.1%}，验证价值充足"
         elif best_ev > 0.03:
-            value_level = "🟡 有一定价值"
-            value_desc = f"{best_name}方向有正期望值，但空间有限，建议轻仓"
+            value_level = "🟡 存在置信度优势"
+            value_desc = f"{best_name}方向有正置信度差值，但空间有限，建议低权重验证"
         elif best_ev > 0:
-            value_level = "🟡 微弱价值"
-            value_desc = f"{best_name}期望值略正，接近公允定价，可参与可不参与"
+            value_level = "🟡 微弱置信度优势"
+            value_desc = f"{best_name}置信度差值略正，接近公允定价，可验证可不验证"
         else:
-            value_level = "🔴 无价值"
-            value_desc = "三个方向期望值均为负，市场定价均高于模型判断，建议观望"
+            value_level = "🔴 无置信度优势"
+            value_desc = "三个方向置信度差值均为负，市场定价均高于模型判断，不建议验证"
 
-        # 价值决策联合卡片
+        # 置信度对比卡片
         if best_ev > 0 and best_kelly > 0:
             position_text = f"保守 {best_kelly*0.25:.1%} ~ 激进 {best_kelly:.1%}"
             position_sub = f"推荐方向：{best_name}"
         else:
-            position_text = "观望"
-            position_sub = "不建议参与"
+            position_text = "不建议"
+            position_sub = "无验证价值"
 
         st.markdown(f"""
         <div style="padding:14px;background:#f0f7ff;border-radius:10px;margin-bottom:8px">
             <div style="display:flex;justify-content:space-between;align-items:center">
                 <div>
-                    <div style="font-size:0.8em;color:#666;margin-bottom:2px">价值评级</div>
+                    <div style="font-size:0.8em;color:#666;margin-bottom:2px">置信度评级</div>
                     <div style="font-size:1.1em;font-weight:600">{value_level}</div>
                     <div style="font-size:0.75em;color:#888">{value_desc}</div>
                 </div>
                 <div style="text-align:right">
-                    <div style="font-size:0.8em;color:#666;margin-bottom:2px">建议仓位</div>
+                    <div style="font-size:0.8em;color:#666;margin-bottom:2px">建议验证权重</div>
                     <div style="font-size:1.1em;font-weight:600">{position_text}</div>
                     <div style="font-size:0.75em;color:#888">{position_sub}</div>
                 </div>
@@ -442,6 +552,57 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
         der_col1.metric("主队不败", f"{home_not_lose:.2%}", help="主胜 + 平局")
         der_col2.metric("客队不败", f"{away_not_lose:.2%}", help="客胜 + 平局")
         der_col3.metric("分胜负", f"{has_winner:.2%}", help="主胜 + 客胜")
+
+        # ==================== SHAP 特征贡献解释 ====================
+        st.markdown("### 🔍 模型判断依据")
+        try:
+            pos_list, neg_list, summary_text = calc_feature_contributions(input_values)
+            
+            col_pos, col_neg = st.columns(2)
+            
+            with col_pos:
+                st.markdown("**🟢 正向因素**")
+                if pos_list:
+                    for cn, val in pos_list:
+                        pct = val * 100
+                        # 用进度条直观展示
+                        st.markdown(f"""
+                        <div style="margin-bottom:8px">
+                            <div style="display:flex;justify-content:space-between;font-size:14px">
+                                <span>{cn}</span>
+                                <span style="color:#27ae60;font-weight:bold">+{abs(pct):.2f}%</span>
+                            </div>
+                            <div style="background:#e8f5e9;height:6px;border-radius:3px;margin-top:2px">
+                                <div style="background:#27ae60;width:{min(abs(pct)*10, 100)}%;height:100%;border-radius:3px"></div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.caption("无明显正向因素")
+            
+            with col_neg:
+                st.markdown("**🔴 负向因素**")
+                if neg_list:
+                    for cn, val in neg_list:
+                        pct = val * 100
+                        st.markdown(f"""
+                        <div style="margin-bottom:8px">
+                            <div style="display:flex;justify-content:space-between;font-size:14px">
+                                <span>{cn}</span>
+                                <span style="color:#e74c3c;font-weight:bold">-{abs(pct):.2f}%</span>
+                            </div>
+                            <div style="background:#fdecea;height:6px;border-radius:3px;margin-top:2px">
+                                <div style="background:#e74c3c;width:{min(abs(pct)*10, 100)}%;height:100%;border-radius:3px;float:right"></div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.caption("无明显负向因素")
+            
+            st.caption(f"💡 {summary_text}")
+            
+        except Exception as e:
+            st.caption(f"特征解释暂不可用：{str(e)}")
 
         # 比分预测（泊松模型）
         exp_h = pred_res["expected_goals"]["home_expected"]

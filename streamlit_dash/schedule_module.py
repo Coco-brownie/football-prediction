@@ -162,6 +162,7 @@ def render_schedule_calendar(user_name=None):
             "时间范围",
             ["今日", "本周", "自定义"],
             horizontal=True,
+            index=1,  # 默认本周
             label_visibility="collapsed"
         )
 
@@ -199,15 +200,49 @@ def render_schedule_calendar(user_name=None):
             else:
                 start_date, end_date = default_start, default_end
 
-    with col3:
-        # 联赛筛选
-        selected_leagues = st.multiselect(
-            "联赛",
-            options=LEAGUE_OPTIONS,
-            default=LEAGUE_OPTIONS,
-            format_func=lambda x: LEAGUE_NAMES[x],
-            label_visibility="collapsed"
-        )
+    # 周切换按钮（仅本周模式显示）
+    if quick_select == "本周":
+        # 用session_state保存周偏移
+        if "week_offset" not in st.session_state:
+            st.session_state.week_offset = 0
+
+        wc1, wc2, wc3, wc4, wc5 = st.columns([1, 1, 1, 1, 6])
+        if wc1.button("← 上一周", key="prev_week"):
+            st.session_state.week_offset -= 1
+        if wc3.button("下一周 →", key="next_week"):
+            st.session_state.week_offset += 1
+        if wc4.button("回到本周", key="this_week"):
+            st.session_state.week_offset = 0
+
+        # 根据偏移计算日期
+        base_monday, _ = get_week_range()
+        offset_days = st.session_state.week_offset * 7
+        start_date = base_monday + timedelta(days=offset_days)
+        end_date = start_date + timedelta(days=6)
+
+        week_label = f"{start_date.strftime('%m/%d')} ~ {end_date.strftime('%m/%d')}"
+        if st.session_state.week_offset == 0:
+            week_label += " （本周）"
+        wc2.markdown(f"<div style='text-align:center;padding:6px 0;font-weight:500'>{week_label}</div>", unsafe_allow_html=True)
+
+    # ========== 联赛快速筛选标签 ==========
+    if "calendar_league" not in st.session_state:
+        st.session_state.calendar_league = "all"
+
+    league_tabs = st.columns([1, 1, 1, 1, 1, 1, 1, 3])
+    league_labels = [("all", "全部"), ("E0", "英超"), ("D1", "德甲"), ("LLA", "西甲"), ("SER", "意甲"), ("LIG", "法甲"), ("UCL", "欧冠")]
+
+    for i, (code, name) in enumerate(league_labels):
+        is_active = st.session_state.calendar_league == code
+        btn_type = "primary" if is_active else "secondary"
+        if league_tabs[i].button(name, key=f"league_tab_{code}", type=btn_type, use_container_width=True):
+            st.session_state.calendar_league = code
+
+    # 根据标签生成筛选列表
+    if st.session_state.calendar_league == "all":
+        selected_leagues = LEAGUE_OPTIONS
+    else:
+        selected_leagues = [st.session_state.calendar_league]
 
     st.divider()
 
@@ -219,6 +254,9 @@ def render_schedule_calendar(user_name=None):
     if len(df_filter) == 0:
         st.info("📭 当前筛选条件下暂无比赛")
         return
+
+    # 按比赛ID去重（防止重复数据）
+    df_filter = df_filter.drop_duplicates(subset=["id"]).copy()
 
     # 按日期分组
     df_filter = df_filter.sort_values(["match_date", "match_time"])
@@ -250,9 +288,12 @@ def render_schedule_calendar(user_name=None):
 
             home_name = row["home_team_cn"] if pd.notna(row["home_team_cn"]) else row["home_team"]
             away_name = row["away_team_cn"] if pd.notna(row["away_team_cn"]) else row["away_team"]
+            # 特征构建用英文标准名（历史数据是英文列）
+            home_std = row["home_team"]
+            away_std = row["away_team"]
 
             try:
-                feature = build_pred_feature(df_hist, home_name, away_name, row["league_code"])
+                feature = build_pred_feature(df_hist, home_std, away_std, row["league_code"])
                 result = predict_match(feature)
                 batch_results.append({
                     "比赛日期": str(row["match_date"])[:10],
@@ -286,60 +327,123 @@ def render_schedule_calendar(user_name=None):
             except:
                 continue
 
-        st.session_state[batch_pred_key] = batch_results
+        # 结果去重（按日期+主队+客队）
+        seen = set()
+        unique_results = []
+        for r in batch_results:
+            key = (r["比赛日期"], r["主队"], r["客队"])
+            if key not in seen:
+                seen.add(key)
+                unique_results.append(r)
+
+        st.session_state[batch_pred_key] = unique_results
 
     st.markdown("---")
 
     # 批量预测结果展示
     if batch_pred_key in st.session_state and len(st.session_state[batch_pred_key]) > 0:
-        st.subheader(f"📊 批量预测结果（共 {len(st.session_state[batch_pred_key])} 场）")
-        df_batch = pd.DataFrame(st.session_state[batch_pred_key])
+        with st.expander(f"📊 批量预测结果（共 {len(st.session_state[batch_pred_key])} 场）", expanded=True):
+            df_batch = pd.DataFrame(st.session_state[batch_pred_key])
 
-        # 置信度筛选
-        col_f1, col_f2, col_f3 = st.columns([2, 2, 1])
-        min_conf = col_f1.slider("最低置信度筛选", 0.35, 0.80, 0.45, 0.05, format="%.0f")
-        sort_by = col_f2.selectbox("排序方式", ["置信度从高到低", "比赛日期", "联赛"], index=0)
-        col_f3.metric("筛选后场次", f"{len(df_batch[df_batch['置信度'] >= min_conf])}场")
+            # 置信度筛选
+            col_f1, col_f2, col_f3 = st.columns([2, 2, 1])
+            min_conf = col_f1.slider("最低置信度筛选", 0.35, 0.80, 0.45, 0.05, format="%.0f")
+            sort_by = col_f2.selectbox("排序方式", ["置信度从高到低", "比赛日期", "联赛"], index=0)
+            col_f3.metric("筛选后场次", f"{len(df_batch[df_batch['置信度'] >= min_conf])}场")
 
-        df_show = df_batch[df_batch['置信度'] >= min_conf].copy()
+            df_show = df_batch[df_batch['置信度'] >= min_conf].copy()
 
-        # 排序
-        if sort_by == "置信度从高到低":
-            df_show = df_show.sort_values("置信度", ascending=False)
-        elif sort_by == "比赛日期":
-            df_show = df_show.sort_values("比赛日期")
-        elif sort_by == "联赛":
-            df_show = df_show.sort_values("联赛")
+            # 排序
+            if sort_by == "置信度从高到低":
+                df_show = df_show.sort_values("置信度", ascending=False)
+            elif sort_by == "比赛日期":
+                df_show = df_show.sort_values("比赛日期")
+            elif sort_by == "联赛":
+                df_show = df_show.sort_values("联赛")
 
-        # 格式化百分比列
-        for col in ["置信度", "主胜概率", "平局概率", "客胜概率"]:
-            df_show[col] = df_show[col].apply(lambda x: f"{x:.1%}")
+            # 格式化百分比列
+            for col in ["置信度", "主胜概率", "平局概率", "客胜概率"]:
+                df_show[col] = df_show[col].apply(lambda x: f"{x:.1%}")
 
-        # 赛果颜色标注
-        def color_result(val):
-            if val == "主胜": return "color: #2ecc71; font-weight: bold"
-            elif val == "客胜": return "color: #e74c3c; font-weight: bold"
-            elif val == "平局": return "color: #f39c12; font-weight: bold"
-            return ""
+            # 赛果颜色标注
+            def color_result(val):
+                if val == "主胜": return "color: #2ecc71; font-weight: bold"
+                elif val == "客胜": return "color: #e74c3c; font-weight: bold"
+                elif val == "平局": return "color: #f39c12; font-weight: bold"
+                return ""
 
-        styled = df_show.style.map(color_result, subset=["预测赛果"])
-        st.dataframe(styled, use_container_width=True, hide_index=True, height=420)
+            styled = df_show.style.map(color_result, subset=["预测赛果"])
+            st.dataframe(styled, use_container_width=True, hide_index=True, height=420)
 
-        # 统计
-        high_conf = len(df_batch[df_batch['置信度'] >= 0.6])
-        very_high = len(df_batch[df_batch['置信度'] >= 0.7])
-        st.caption(f"💡 ≥60%置信度 {high_conf} 场（预期准确率~85%），≥70%置信度 {very_high} 场（预期准确率~91%）")
-        st.caption("⚠️ 赛程预测缺少赔率和射门数据，为降级预测，仅供参考")
-        st.markdown("---")
+            # 统计
+            high_conf = len(df_batch[df_batch['置信度'] >= 0.6])
+            very_high = len(df_batch[df_batch['置信度'] >= 0.7])
+            st.caption(f"💡 ≥60%置信度 {high_conf} 场（预期准确率~85%），≥70%置信度 {very_high} 场（预期准确率~91%）")
+            st.caption("⚠️ 赛程预测缺少赔率和射门数据，为降级预测，仅供参考")
 
-    # ========== 按日期展示 ==========
+    # ========== 按天卡片式展示 ==========
+    WEEKDAY_CN = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    today = datetime.now().date()
+    tomorrow = today + timedelta(days=1)
+
     for date_val, day_df in grouped:
-        day_name = date_val.strftime("%Y-%m-%d %A")
+        day_name = date_val.strftime("%m-%d")
+        weekday = WEEKDAY_CN[date_val.weekday()]
         day_count = len(day_df)
+        is_today = date_val == today
+        is_tomorrow = date_val == tomorrow
+        is_near = is_today or is_tomorrow
+        is_weekend = date_val.weekday() >= 5
 
-        with st.expander(f"📆 {day_name}（{day_count} 场）", expanded=True):
-            for _, row in day_df.iterrows():
-                render_match_row(row, df_hist)
+        # 日期标题栏
+        if is_today:
+            header_bg = "#e3f2fd"
+            header_border = "3px solid #2196f3"
+            today_tag = " 🔴 今天"
+        elif is_tomorrow:
+            header_bg = "#e8f5e9"
+            header_border = "2px solid #66bb6a"
+            today_tag = " 🟢 明天"
+        elif is_weekend:
+            header_bg = "#f5f5f5"
+            header_border = "none"
+            today_tag = ""
+        else:
+            header_bg = "#fafafa"
+            header_border = "none"
+            today_tag = ""
+
+        date_title = f"📅 {day_name} {weekday}（{day_count} 场）{today_tag}"
+
+        # 今明两天直接展开，其他天折叠
+        if is_near:
+            st.markdown(f"""
+            <div style="padding:10px 16px;background:{header_bg};border-radius:8px;
+                        margin-bottom:12px;border-left:{header_border}">
+                <span style="font-weight:600;font-size:17px">{date_title}</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # 双列卡片布局
+            day_list = day_df.sort_values("match_time").to_dict('records')
+            col_left, col_right = st.columns(2)
+
+            for i, row in enumerate(day_list):
+                col = col_left if i % 2 == 0 else col_right
+                with col:
+                    render_match_card(row, df_hist, user_name)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+        else:
+            with st.expander(date_title, expanded=False):
+                # 双列卡片布局
+                day_list = day_df.sort_values("match_time").to_dict('records')
+                col_left, col_right = st.columns(2)
+
+                for i, row in enumerate(day_list):
+                    col = col_left if i % 2 == 0 else col_right
+                    with col:
+                        render_match_card(row, df_hist, user_name)
 
 
 def render_match_row(row, df_hist):
@@ -399,7 +503,7 @@ def render_match_row(row, df_hist):
         if can_pred:
             if btn_col1.button("🔮 预测", key=f"btn_pred_{match_id}", type="primary"):
                 # 构建特征并预测
-                feature = build_pred_feature(df_hist, home_name, away_name, row["league_code"])
+                feature = build_pred_feature(df_hist, row["home_team"], row["away_team"], row["league_code"])
                 result = predict_match(feature)
                 st.session_state[pred_key] = result
 
@@ -441,3 +545,103 @@ def render_match_row(row, df_hist):
             btn_col1.button(f"🔮 预测", key=f"btn_pred_{match_id}", disabled=True, help=reason)
 
     st.markdown("<div style='height:1px;background:#f0f0f0;margin:8px 0;'></div>", unsafe_allow_html=True)
+
+
+def render_match_card(row, df_hist, user_name=None):
+    """渲染单场比赛卡片（A+方案）"""
+    league_info = LEAGUE_DISPLAY.get(row["league_code"], {"name": row["league_code"], "color": "#666"})
+    match_id = int(row["id"])
+    pred_key = f"schedule_pred_{match_id}"
+
+    home_name = row["home_team_cn"] if pd.notna(row.get("home_team_cn")) and row["home_team_cn"] != row["home_team"] else row["home_team"]
+    away_name = row["away_team_cn"] if pd.notna(row.get("away_team_cn")) and row["away_team_cn"] != row["away_team"] else row["away_team"]
+    # 特征构建用英文标准名
+    home_std = row["home_team"]
+    away_std = row["away_team"]
+
+    is_played = row["status"] == "Played" and pd.notna(row.get("result"))
+
+    # 卡片顶部：联赛标签 + 时间
+    st.markdown(f"""
+    <div style="padding:12px 14px;background:#fff;border:1px solid #e8e8e8;border-radius:10px;
+                box-shadow:0 1px 3px rgba(0,0,0,0.04);margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-size:11px;padding:2px 10px;border-radius:12px;font-weight:500;
+                         background:{league_info['color']};color:white">{league_info['name']}</span>
+            <span style="font-size:13px;color:#888">⏰ {row['match_time']}</span>
+        </div>
+        <div style="font-size:15px;font-weight:500;text-align:center;padding:4px 0 8px;">
+            {home_name} <span style="color:#bbb;margin:0 10px;font-weight:400">vs</span> {away_name}
+        </div>
+    """, unsafe_allow_html=True)
+
+    # 比分（已完赛）
+    if is_played:
+        st.markdown(
+            f"<div style='text-align:center;margin-bottom:8px;'>"
+            f"<span style='background:#e8f5e9;color:#2e7d32;padding:3px 12px;border-radius:6px;font-size:14px;font-weight:600;'>"
+            f"{row['result']}"
+            f"</span></div>",
+            unsafe_allow_html=True
+        )
+
+    # 预测按钮 + 结果
+    if not is_played:
+        can_pred, reason = can_predict_match(row, df_hist)
+
+        if can_pred:
+            if st.button("🔮 预测", key=f"btn_card_pred_{match_id}", type="primary", use_container_width=True):
+                feature = build_pred_feature(df_hist, home_std, away_std, row["league_code"])
+                result = predict_match(feature)
+                st.session_state[pred_key] = result
+
+                # 保存到数据库
+                try:
+                    save_prediction_to_db(
+                        match_date=str(row["match_date"])[:10],
+                        home_team=home_name,
+                        away_team=away_name,
+                        league_code=row["league_code"],
+                        prob_home=result["prob_home_win"],
+                        prob_draw=result["prob_draw"],
+                        prob_away=result["prob_away_win"],
+                        predict_result=result["predict_result"],
+                        confidence=result["confidence"],
+                        predict_source="schedule",
+                        user_name=user_name
+                    )
+                except:
+                    pass
+
+            # 展示预测结果
+            if pred_key in st.session_state:
+                pred_result = st.session_state[pred_key]
+                result_color = {"主胜": "#2ecc71", "平局": "#f39c12", "客胜": "#e74c3c"}.get(pred_result["predict_result"], "#666")
+                st.markdown(
+                    f"<div style='margin-top:8px;padding:8px 10px;background:#f8f9fa;border-radius:6px;'>"
+                    f"<div style='font-size:14px;font-weight:600;color:{result_color}'>"
+                    f"→ {pred_result['predict_result']}"
+                    f"<span style='color:#666;font-weight:400;font-size:12px;margin-left:6px'>"
+                    f"置信度 {pred_result['confidence']:.1%}"
+                    f"</span></div>"
+                    f"<div style='font-size:11px;color:#999;margin-top:3px'>"
+                    f"主胜 {pred_result['prob_home_win']:.0%} · 平 {pred_result['prob_draw']:.0%} · 客胜 {pred_result['prob_away_win']:.0%}"
+                    f"</div></div>",
+                    unsafe_allow_html=True
+                )
+
+                # 详情展开：AI出手建议
+                show_detail = st.checkbox("📋 查看详情", key=f"detail_{match_id}")
+                if show_detail:
+                    from ai_intent_module import calc_ai_bet_intent
+                    intent = calc_ai_bet_intent(pred_result["confidence"], pred_result["predict_result"])
+                    st.markdown(f"**共识等级：{intent['consensus_label']}**")
+                    for ai_name, ai_data in intent["intents"].items():
+                        status = "✅ 建议关注" if ai_data["will_bet"] else "❌ 观望"
+                        st.caption(f"{ai_name}：{status}")
+                    st.caption(f"模型融合：{pred_result.get('fusion_weight', 'LGB 55% + 泊松 30% + 平局专项 5%')}")
+        else:
+            st.button("🔮 预测", key=f"btn_card_pred_{match_id}", disabled=True, help=reason, use_container_width=True)
+
+    # 卡片底部闭合
+    st.markdown("</div>", unsafe_allow_html=True)

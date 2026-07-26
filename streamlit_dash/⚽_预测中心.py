@@ -107,8 +107,8 @@ st.divider()
 
 # 免责声明
 st.warning("""
-**⚠️ 免责声明：本系统仅供机器学习研究与教学演示使用，所有预测结果均为模型算法输出，不构成任何投注建议或投资指导。**
-博彩有风险，请理性对待。历史数据来自 [football-data.co.uk](https://www.football-data.co.uk/)，模型为自研 LightGBM 三分类。
+**⚠️ 免责声明：本系统仅供机器学习研究与模型验证使用，所有预测结果均为模型算法输出，不构成任何决策建议。严禁用于其他用途。**
+历史数据来自 [football-data.co.uk](https://www.football-data.co.uk/)，模型为自研 LightGBM 三分类。
 """)
 
 # 顶部统计卡片（仅统计真实比赛）
@@ -154,18 +154,11 @@ except:
 st.divider()
 
 # 核心功能 Tabs
-tab_predict, tab_calendar, tab_ai_view, tab_track = st.tabs([
-    "🔮 手动预测",
+tab_calendar, tab_predict, tab_track = st.tabs([
     "📅 赛事日历",
-    "🤖 AI今日观点",
-    "📈 预测追踪"
+    "🔮 单场预测",
+    "📋 预测历史"
 ])
-
-with tab_predict:
-    if not current_user:
-        st.info("👆 请先在顶部输入昵称，再使用手动预测功能")
-    else:
-        render_match_predict_panel(cn_2_std=cn_2_std, std_2_cn=std_2_cn, user_name=current_user)
 
 with tab_calendar:
     if not current_user:
@@ -173,9 +166,10 @@ with tab_calendar:
     else:
         render_schedule_calendar(user_name=current_user)
 
-with tab_ai_view:
-    st.subheader("🤖 赛事观点")
-    st.caption("基于当前模型批量计算未来赛事的三AI下注意愿，仅供参考")
+    # ===== AI 观点区块 =====
+    st.divider()
+    st.subheader("🤖 AI 出手参考")
+    st.caption("基于当前模型批量计算未来赛事的三AI出手建议，仅供决策参考")
     
     # 日期范围选择
     col_d1, col_d2 = st.columns([1, 3])
@@ -197,7 +191,7 @@ with tab_ai_view:
     
     st.info(f"📅 未来 {days_ahead} 天共 {len(df_upcoming)} 场五大联赛赛事")
     
-    if st.button("🔍 批量计算三AI观点", type="primary", key="calc_ai_view", disabled=not current_user):
+    if st.button("🔍 批量计算三AI参考", type="primary", key="calc_ai_view", disabled=not current_user):
         if not current_user:
             st.warning("请先在顶部输入昵称")
         elif len(df_upcoming) == 0:
@@ -237,9 +231,9 @@ with tab_ai_view:
                         "预测方向": result,
                         "置信度": f"{conf:.1%}",
                         "共识等级": intent["consensus_label"],
-                        "激进AI": "✅出手" if intent["intents"]["激进AI"]["will_bet"] else "❌观望",
-                        "中立AI": "✅出手" if intent["intents"]["中立AI"]["will_bet"] else "❌观望",
-                        "保守AI": "✅出手" if intent["intents"]["保守AI"]["will_bet"] else "❌观望",
+                        "激进AI": "✅建议" if intent["intents"]["激进AI"]["will_bet"] else "❌观望",
+                        "中立AI": "✅建议" if intent["intents"]["中立AI"]["will_bet"] else "❌观望",
+                        "保守AI": "✅建议" if intent["intents"]["保守AI"]["will_bet"] else "❌观望",
                     })
                 except Exception as e:
                     results.append({
@@ -258,13 +252,63 @@ with tab_ai_view:
             
             progress_bar.empty()
             df_ai_view = pd.DataFrame(results)
-            st.dataframe(df_ai_view, use_container_width=True, hide_index=True)
-            st.caption("💡 赔率使用默认估算值，实际下注意愿以开盘赔率为准；共识度越高可靠性越强")
+            
+            # 共识等级排序映射
+            consensus_order = {
+                "🛡️ 三AI共识": 0,
+                "⚖️ 两AI共识": 1,
+                "🔥 仅激进关注": 2,
+                "无AI出手": 3,
+                "数据不足": 4
+            }
+            df_ai_view["共识排序"] = df_ai_view["共识等级"].map(consensus_order)
+            df_ai_view = df_ai_view.sort_values(["共识排序", "置信度"], ascending=[True, False])
+            df_ai_view = df_ai_view.drop(columns=["共识排序"])
+            
+            # 精选：三AI全票通过
+            df_top = df_ai_view[df_ai_view["共识等级"] == "🛡️ 三AI共识"]
+            
+            if len(df_top) > 0:
+                st.markdown("### 🏆 精选推荐（三AI共识）")
+                st.caption("三个AI同时建议关注，可靠性最高")
+                for _, row in df_top.iterrows():
+                    st.markdown(f"""
+                    <div style="padding:12px;background:#f0f9eb;border-left:4px solid #67c23a;border-radius:6px;margin-bottom:8px">
+                        <b>{row['比赛日期']} · {row['主队']} vs {row['客队']}</b><br>
+                        <span style="color:#67c23a">预测：{row['预测方向']}</span> · 
+                        置信度：{row['置信度']}
+                    </div>
+                    """, unsafe_allow_html=True)
+                st.divider()
+            
+            # 完整表格 + 筛选
+            st.markdown("### 📋 全部赛事参考")
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                filter_consensus = st.multiselect(
+                    "按共识等级筛选",
+                    ["🛡️ 三AI共识", "⚖️ 两AI共识", "🔥 仅激进关注", "无AI出手"],
+                    default=["🛡️ 三AI共识", "⚖️ 两AI共识"],
+                    key="ai_view_filter"
+                )
+            
+            df_show = df_ai_view.copy()
+            if filter_consensus:
+                df_show = df_show[df_show["共识等级"].isin(filter_consensus)]
+            
+            st.dataframe(df_show, use_container_width=True, hide_index=True)
+            st.caption("💡 市场概率使用默认估算值，实际置信度以真实数据为准；共识度越高参考价值越强")
     else:
-        st.info("👆 点击上方按钮批量计算三AI观点")
+        st.info("👆 点击上方按钮批量计算三AI参考")
+
+with tab_predict:
+    if not current_user:
+        st.info("👆 请先在顶部输入昵称，再使用单场预测功能")
+    else:
+        render_match_predict_panel(cn_2_std=cn_2_std, std_2_cn=std_2_cn, user_name=current_user)
 
 with tab_track:
-    st.subheader("📈 预测追踪与复盘")
+    st.subheader("📋 预测历史")
     
     if df_preds.empty:
         st.info("暂无预测记录，去手动预测页做一次预测吧～")
@@ -452,3 +496,54 @@ with tab_track:
                     return val
                 df_show['实际赛果'] = df_show.apply(format_actual, axis=1)
             st.dataframe(df_show, use_container_width=True, hide_index=True)
+
+# 底部更新日志（默认折叠，不占空间）
+APP_VERSION = "v0.4.2"
+st.divider()
+with st.expander(f"📝 更新日志 · {APP_VERSION} 🆕", expanded=False):
+    st.markdown("""
+**v0.4.2 — 2026-07-26（架构优化）**
+- 功能重定位：预测中心/模型验证/数据看板 三页面职责更清晰
+- 赛事日历升级为默认首屏（先粗后精）
+- AI出手参考整合进赛事日历tab
+- 预测追踪改名为预测历史，弱化博彩感
+- 赛事日历增加联赛快速筛选标签（一键切换）
+- 赛事日历今明两天默认展开，其他日期折叠，首屏更清爽
+- 修复模型验证页多处列名不匹配报错
+- 新增版本号显示 + 更新提醒标记
+- 批量预测结果可折叠，看完收起不占空间
+- 单场卡片增加「查看详情」，展开显示三AI建议
+
+**v0.4.1 — 2026-07-26（体验优化）**
+- 赛事日历升级为卡片周视图，支持上/下周快速切换
+- 修复赛事日历预测结果全部相同的问题（队名匹配）
+- 修复数据看板排序、中文映射、列宽等多项体验问题
+- 修复策略回测页列名报错
+- 批量预测结果增加去重保护
+
+**v0.4 — 2026-07-26（ELO增强版）**
+- 模型准确率提升至 64.06%（累计提升约 2.4%）
+- 新增 ELO 评分体系，球队实力评估更精准
+- 三模型融合权重优化，泊松模型价值充分释放
+- 新增概率校准功能，置信度数值更可信
+- 前端文案优化，明确机器学习验证工具定位
+
+**v0.3 — 2026-07-25**
+- 新增昵称用户体系
+- 真实比赛标记与统计过滤
+- 预测去重机制
+- 预测历史中文队名修复
+
+**v0.2 — 2026-07-24**
+- 联赛独立模型上线
+- 泊松进球模型融合
+- 平局二分类专项模型
+- 数据看板页面
+
+**v0.1 — 初始版本**
+- LightGBM 基础预测模型
+- 手动预测功能
+- 赛事日历模块
+- 三AI出手建议计算
+    """)
+    st.caption("完整开发计划见 DEVELOPMENT_PLAN.md")

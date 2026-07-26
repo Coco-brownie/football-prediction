@@ -5,12 +5,13 @@ import math
 import lightgbm as lgb
 import joblib
 import os
+import pickle
 
 ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(ROOT_PATH, "model")
 
 
-# 【2026-07-24 新增：平局率特征4维，总计34维】
+# 【2026-07-26 ELO增强：34维基础 + 3维ELO = 37维】
 FEATURE_COLS = [
     "h5_gf","h5_ga","h5_shot","h5_shot_ot",
     "h10_gf","h10_ga",
@@ -21,7 +22,8 @@ FEATURE_COLS = [
     "h2h_cnt", "h2h_home_win_rate", "h2h_draw_rate", "h2h_home_gf_avg", "h2h_home_ga_avg",
     "prob_ratio_ha", "prob_draw_share", "prob_max", "prob_entropy", "prob_home_favorite",
     "home_draw_rate_5", "home_draw_rate_10", "away_draw_rate_5", "away_draw_rate_10",
-    "league_SER","league_E0","league_D1","league_LIG","league_LLA"
+    "league_SER","league_E0","league_D1","league_LIG","league_LLA",
+    "home_elo_before", "away_elo_before", "elo_diff_before",
 ]
 
 # 泊松模型特征（14维）
@@ -35,12 +37,12 @@ POISSON_FEATURES = [
 # 顺序：h5_gf, h5_ga, a5_gf, a5_ga, h10_gf, h10_ga, a10_gf, a10_ga, league_*5, shot_on_diff
 POISSON_FEAT_IDX = [0, 1, 6, 7, 4, 5, 10, 11, 29, 30, 31, 32, 33, 14]
 
-# 融合权重：LGB 70% + 泊松 15% + 平局专项 15%（三模型融合）
-FUSION_WEIGHT_LGB = 0.7
-FUSION_WEIGHT_POISSON = 0.15
-FUSION_WEIGHT_DRAW = 0.15
+# 融合权重：LGB 55% + 泊松 30% + 平局专项 5%（网格搜索OOS最优保守方案）
+FUSION_WEIGHT_LGB = 0.55
+FUSION_WEIGHT_POISSON = 0.30
+FUSION_WEIGHT_DRAW = 0.05
 
-# 【2026-07-24 新增：联赛独立模型 29维特征（去掉联赛独热）】
+# 【2026-07-26 ELO增强：联赛独立模型 29 + 3 = 32维】
 LEAGUE_FEATURE_COLS = [
     "h5_gf","h5_ga","h5_shot","h5_shot_ot",
     "h10_gf","h10_ga",
@@ -51,6 +53,7 @@ LEAGUE_FEATURE_COLS = [
     "h2h_cnt", "h2h_home_win_rate", "h2h_draw_rate", "h2h_home_gf_avg", "h2h_home_ga_avg",
     "prob_ratio_ha", "prob_draw_share", "prob_max", "prob_entropy", "prob_home_favorite",
     "home_draw_rate_5", "home_draw_rate_10", "away_draw_rate_5", "away_draw_rate_10",
+    "home_elo_before", "away_elo_before", "elo_diff_before",
 ]
 
 # 联赛模型缓存
@@ -65,6 +68,37 @@ poisson_away_model = joblib.load(os.path.join(MODEL_DIR, "poisson_away_goals.pkl
 
 # 【2026-07-25 新增：平局二分类专项模型，提升平局召回】
 draw_binary_model = joblib.load(os.path.join(MODEL_DIR, "draw_binary_model.pkl"))
+
+# 【2026-07-26 新增：Platt概率校准器】
+_calibrator = None
+def _get_calibrator():
+    global _calibrator
+    if _calibrator is None:
+        cal_path = os.path.join(MODEL_DIR, "platt_calibrator_home.pkl")
+        if os.path.exists(cal_path):
+            with open(cal_path, "rb") as f:
+                _calibrator = pickle.load(f)
+    return _calibrator
+
+
+def apply_probability_calibration(probs):
+    """应用Platt概率校准
+    输入：shape=(n, 3)的概率数组 [主胜, 平局, 客胜]
+    输出：校准后的概率
+    """
+    cal = _get_calibrator()
+    if cal is None:
+        return probs  # 校准器不存在则返回原值
+    
+    cal_probs = np.zeros_like(probs)
+    for i in range(3):
+        cal_probs[:, i] = cal[i].predict_proba(probs[:, i].reshape(-1, 1))[:, 1]
+    # 归一化
+    row_sums = cal_probs.sum(axis=1, keepdims=True)
+    # 防止除零
+    row_sums = np.where(row_sums == 0, 1, row_sums)
+    cal_probs = cal_probs / row_sums
+    return cal_probs
 
 
 def calc_score_matrix(h_lam, a_lam, max_goals=8):
@@ -139,15 +173,18 @@ def load_league_model(league_cfg_code):
     home_path = os.path.join(MODEL_DIR, f"league_{league_cfg_code}_home.pkl")
     away_path = os.path.join(MODEL_DIR, f"league_{league_cfg_code}_away.pkl")
 
-    if not os.path.exists(home_path) or not os.path.exists(away_path):
+    if not os.path.exists(home_path):
         _league_model_cache[league_cfg_code] = (None, None)
         return None, None
 
     import pickle
     with open(home_path, "rb") as f:
         h_model = pickle.load(f)
-    with open(away_path, "rb") as f:
-        a_model = pickle.load(f)
+    
+    a_model = None
+    if os.path.exists(away_path):
+        with open(away_path, "rb") as f:
+            a_model = pickle.load(f)
 
     _league_model_cache[league_cfg_code] = (h_model, a_model)
     return h_model, a_model
