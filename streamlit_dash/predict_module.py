@@ -52,6 +52,19 @@ FEATURE_CN_MAP = {
     "league_D1": "联赛-德甲",
     "league_LIG": "联赛-法甲",
     "league_LLA": "联赛-西甲",
+    # ELO直接特征
+    "home_elo_before": "主队ELO评分",
+    "away_elo_before": "客队ELO评分",
+    "elo_diff_before": "ELO实力差距",
+    # ELO扩展特征
+    "h5_gf_elo_weighted": "主队加权进攻效率",
+    "h5_ga_elo_weighted": "主队加权防守漏洞",
+    "a5_gf_elo_weighted": "客队加权进攻效率",
+    "a5_ga_elo_weighted": "客队加权防守漏洞",
+    "home_w5_elo_trend": "主队近期状态走势",
+    "home_w10_elo_trend": "主队中期状态走势",
+    "away_w5_elo_trend": "客队近期状态走势",
+    "away_w10_elo_trend": "客队中期状态走势",
 }
 
 # SHAP解释器（延迟初始化）

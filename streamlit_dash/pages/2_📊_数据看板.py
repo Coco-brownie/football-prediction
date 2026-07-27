@@ -41,7 +41,7 @@ apply_global_style()
 track('page_view', page_name='数据看板')
 
 # 导入球队映射
-from team_mapping_v2 import LEAGUE_TEAM_MAP, LEAGUE_CFG
+from team_mapping_v2 import LEAGUE_TEAM_MAP, LEAGUE_CFG, get_team_cn_name_v2
 
 # ==================== 加载数据 ====================
 df_raw = load_match_feature_data()
@@ -66,17 +66,30 @@ for cfg_code, team_map in LEAGUE_TEAM_MAP.items():
 
 # 从数据本身补充 std -> 中文名 映射（兜底，确保无缺失）
 if "home_team_std" in df_raw.columns and "home_team" in df_raw.columns:
-    for _, row in df_raw[["home_team_std", "home_team"]].drop_duplicates().iterrows():
+    for _, row in df_raw[["home_team_std", "home_team", "league_code"]].drop_duplicates().iterrows():
         std = row["home_team_std"]
         cn = row["home_team"]
         if std and cn and std not in std_2_cn:
             std_2_cn[std] = cn
 if "away_team_std" in df_raw.columns and "away_team" in df_raw.columns:
-    for _, row in df_raw[["away_team_std", "away_team"]].drop_duplicates().iterrows():
+    for _, row in df_raw[["away_team_std", "away_team", "league_code"]].drop_duplicates().iterrows():
         std = row["away_team_std"]
         cn = row["away_team"]
         if std and cn and std not in std_2_cn:
             std_2_cn[std] = cn
+
+# 终极兜底：用统一映射函数补全所有出现过的球队
+all_teams = pd.unique(df_raw[[home_col, away_col]].values.ravel("K")).tolist()
+for team in all_teams:
+    if team not in std_2_cn:
+        # 从数据里找这个球队对应的联赛
+        team_league = df_raw[df_raw[home_col] == team]["league_code"].iloc[0] if len(df_raw[df_raw[home_col] == team]) > 0 else None
+        if not team_league:
+            team_league = df_raw[df_raw[away_col] == team]["league_code"].iloc[0] if len(df_raw[df_raw[away_col] == team]) > 0 else None
+        if team_league:
+            cn = get_team_cn_name_v2(team_league, team, print_miss=False)
+            if cn and cn != team:
+                std_2_cn[team] = cn
 
 # ==================== 顶部筛选栏 ====================
 st.title("📊 数据看板")
@@ -660,6 +673,11 @@ with st.expander("⚙️ 模型信息（高级）", expanded=False):
             "league_D1": "联赛-德甲", "league_LIG": "联赛-法甲", "league_LLA": "联赛-西甲",
             "home_elo_before": "主队赛前ELO", "away_elo_before": "客队赛前ELO",
             "elo_diff_before": "赛前ELO差值",
+            # ELO扩展特征
+            "h5_gf_elo_weighted": "主队加权进攻效率", "h5_ga_elo_weighted": "主队加权防守漏洞",
+            "a5_gf_elo_weighted": "客队加权进攻效率", "a5_ga_elo_weighted": "客队加权防守漏洞",
+            "home_w5_elo_trend": "主队近期状态走势", "home_w10_elo_trend": "主队中期状态走势",
+            "away_w5_elo_trend": "客队近期状态走势", "away_w10_elo_trend": "客队中期状态走势",
         }
         gain_imp = home_model.feature_importance(importance_type='gain')
         total = gain_imp.sum()

@@ -11,7 +11,7 @@ ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(ROOT_PATH, "model")
 
 
-# 【2026-07-26 ELO增强：34维基础 + 3维ELO = 37维】
+# 【2026-07-27 ELO扩展版V2：34维基础 + 3维ELO直接 + 8维ELO扩展 = 45维】
 FEATURE_COLS = [
     "h5_gf","h5_ga","h5_shot","h5_shot_ot",
     "h10_gf","h10_ga",
@@ -24,6 +24,10 @@ FEATURE_COLS = [
     "home_draw_rate_5", "home_draw_rate_10", "away_draw_rate_5", "away_draw_rate_10",
     "league_SER","league_E0","league_D1","league_LIG","league_LLA",
     "home_elo_before", "away_elo_before", "elo_diff_before",
+    "h5_gf_elo_weighted", "h5_ga_elo_weighted",
+    "a5_gf_elo_weighted", "a5_ga_elo_weighted",
+    "home_w5_elo_trend", "home_w10_elo_trend",
+    "away_w5_elo_trend", "away_w10_elo_trend",
 ]
 
 # 泊松模型特征（14维）
@@ -42,7 +46,7 @@ FUSION_WEIGHT_LGB = 0.55
 FUSION_WEIGHT_POISSON = 0.30
 FUSION_WEIGHT_DRAW = 0.05
 
-# 【2026-07-26 ELO增强：联赛独立模型 29 + 3 = 32维】
+# 【2026-07-27 ELO扩展版V2：联赛独立模型 29 + 3 + 8 = 40维】
 LEAGUE_FEATURE_COLS = [
     "h5_gf","h5_ga","h5_shot","h5_shot_ot",
     "h10_gf","h10_ga",
@@ -54,6 +58,10 @@ LEAGUE_FEATURE_COLS = [
     "prob_ratio_ha", "prob_draw_share", "prob_max", "prob_entropy", "prob_home_favorite",
     "home_draw_rate_5", "home_draw_rate_10", "away_draw_rate_5", "away_draw_rate_10",
     "home_elo_before", "away_elo_before", "elo_diff_before",
+    "h5_gf_elo_weighted", "h5_ga_elo_weighted",
+    "a5_gf_elo_weighted", "a5_ga_elo_weighted",
+    "home_w5_elo_trend", "home_w10_elo_trend",
+    "away_w5_elo_trend", "away_w10_elo_trend",
 ]
 
 # 联赛模型缓存
@@ -213,6 +221,9 @@ def predict_match(feature_array, is_home_scene: bool = True):
     if tot < 1e-8:
         tot = 1.0
     prob_final = np.array([prob_h / tot, prob_d / tot, prob_a / tot])
+
+    # 【2026-07-27 概率校准】Platt缩放，提升置信度可信度
+    prob_final = apply_probability_calibration(prob_final.reshape(1, -1))[0]
 
     # 泊松进球期望值（用于比分/大小球预测）
     X_poi = X[:, POISSON_FEAT_IDX]

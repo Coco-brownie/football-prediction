@@ -3,7 +3,7 @@ import numpy as np
 import sqlite3
 import os
 
-# 完整37维特征（34基础 + 3 ELO），与 match_predict.py 全局统一
+# 完整45维特征（34基础 + 3 ELO直接 + 8 ELO扩展），与 match_predict.py 全局统一
 FEATURE_COLS = [
     "h5_gf","h5_ga","h5_shot","h5_shot_ot",
     "h10_gf","h10_ga",
@@ -16,6 +16,10 @@ FEATURE_COLS = [
     "home_draw_rate_5", "home_draw_rate_10", "away_draw_rate_5", "away_draw_rate_10",
     "league_SER","league_E0","league_D1","league_LIG","league_LLA",
     "home_elo_before", "away_elo_before", "elo_diff_before",
+    "h5_gf_elo_weighted", "h5_ga_elo_weighted",
+    "a5_gf_elo_weighted", "a5_ga_elo_weighted",
+    "home_w5_elo_trend", "home_w10_elo_trend",
+    "away_w5_elo_trend", "away_w10_elo_trend",
 ]
 
 # 联赛编码 → 5个独热位的映射（顺序严格对齐训练时的 LEAGUE_FIX_COLS）
@@ -29,10 +33,11 @@ LEAGUE_ONEHOT_MAP = {
 
 # ELO缓存
 _elo_cache = None
+_elo_history_cache = None  # 每支球队的ELO时序列表 [(date, elo), ...]
 
 def _get_elo_cache():
     """懒加载ELO缓存：从match_elo表取每支球队最新ELO"""
-    global _elo_cache
+    global _elo_cache, _elo_history_cache
     if _elo_cache is not None:
         return _elo_cache
     
@@ -54,10 +59,17 @@ def _get_elo_cache():
     df = df.sort_values("match_date")
     
     _elo_cache = {}
+    _elo_history_cache = {}
     for league in df["league_code"].unique():
         league_df = df[df["league_code"] == league]
         latest = league_df.groupby("team").last()["elo"].to_dict()
         _elo_cache[league] = latest
+        # 时序数据：每支球队按日期排序的ELO列表
+        history = {}
+        for team in league_df["team"].unique():
+            team_df = league_df[league_df["team"] == team].sort_values("match_date")
+            history[team] = list(zip(team_df["match_date"], team_df["elo"]))
+        _elo_history_cache[league] = history
     
     return _elo_cache
 
@@ -67,6 +79,77 @@ def get_team_elo(team_std, league_code):
     cache = _get_elo_cache()
     league_elos = cache.get(league_code, {})
     return league_elos.get(team_std, 1500.0)
+
+
+def get_team_elo_weighted_stats(df_filter, team_name, league_code, recent_n=5):
+    """计算球队近N场的ELO加权攻防统计
+    核心逻辑：赢强队比赢弱队更有价值，按对手ELO加权
+    返回：加权场均进球、加权场均失球
+    """
+    _get_elo_cache()  # 确保缓存加载
+    elo_map = _elo_cache.get(league_code, {})
+    
+    home_col = "home_team_std" if "home_team_std" in df_filter.columns else "home_team"
+    away_col = "away_team_std" if "away_team_std" in df_filter.columns else "away_team"
+
+    home_rec = df_filter[df_filter[home_col] == team_name].copy()
+    away_rec = df_filter[df_filter[away_col] == team_name].copy()
+    all_rec = pd.concat([home_rec, away_rec]).sort_values("match_date", ascending=False).head(recent_n)
+
+    if len(all_rec) == 0:
+        return 0.0, 0.0
+
+    weighted_gf = 0.0
+    weighted_ga = 0.0
+    total_weight = 0.0
+
+    for _, row in all_rec.iterrows():
+        # 确定对手
+        if row[home_col] == team_name:
+            opponent = row[away_col]
+            gf = row["home_goals"]
+            ga = row["away_goals"]
+        else:
+            opponent = row[home_col]
+            gf = row["away_goals"]
+            ga = row["home_goals"]
+
+        # 对手ELO作为权重（用联赛均值归一化，避免数值过大）
+        opp_elo = elo_map.get(opponent, 1500.0)
+        weight = opp_elo / 1500.0  # 以1500为基准
+
+        weighted_gf += gf * weight
+        weighted_ga += ga * weight
+        total_weight += weight
+
+    if total_weight == 0:
+        return 0.0, 0.0
+
+    return weighted_gf / total_weight, weighted_ga / total_weight
+
+
+def get_team_elo_trend(team_std, league_code, recent_n=5):
+    """计算球队近N场的ELO变化趋势
+    返回：趋势值（每场平均ELO变化，正=上升，负=下降）
+    """
+    _get_elo_cache()  # 确保缓存加载
+    history = _elo_history_cache.get(league_code, {}).get(team_std, [])
+
+    if len(history) < 2:
+        return 0.0
+
+    # 取最近N+1个点（N场比赛对应N+1个赛前ELO值）
+    recent = history[-(recent_n + 1):] if len(history) > recent_n else history
+
+    if len(recent) < 2:
+        return 0.0
+
+    # 简单线性趋势：(最新 - 最早) / 场次数
+    first_elo = recent[0][1]
+    last_elo = recent[-1][1]
+    n_games = len(recent) - 1
+
+    return (last_elo - first_elo) / n_games if n_games > 0 else 0.0
 
 def get_team_recent_stats(df_filter, team_name, recent_n):
     # 自动兼容列名：优先 _std 后缀，回退原生列名
@@ -214,11 +297,21 @@ def build_feature_by_teams(df_full, home_team, away_team, draw_odds, away_odds, 
 
     result = base_feat + league_feat
     
-    # ELO特征（3维）
+    # ELO特征（3维直接特征）
     home_elo = get_team_elo(home_team, league_code)
     away_elo = get_team_elo(away_team, league_code)
     elo_diff = home_elo - away_elo
     result += [home_elo, away_elo, elo_diff]
+
+    # ELO扩展特征（8维：4个对手加权 + 4个趋势）
+    h5_gf_w, h5_ga_w = get_team_elo_weighted_stats(df_full, home_team, league_code, 5)
+    a5_gf_w, a5_ga_w = get_team_elo_weighted_stats(df_full, away_team, league_code, 5)
+    home_w5_trend = get_team_elo_trend(home_team, league_code, 5)
+    home_w10_trend = get_team_elo_trend(home_team, league_code, 10)
+    away_w5_trend = get_team_elo_trend(away_team, league_code, 5)
+    away_w10_trend = get_team_elo_trend(away_team, league_code, 10)
+    result += [h5_gf_w, h5_ga_w, a5_gf_w, a5_ga_w,
+               home_w5_trend, home_w10_trend, away_w5_trend, away_w10_trend]
 
     # 可选：追加身价特征（5维）
     if use_value_features and league_cfg_code:

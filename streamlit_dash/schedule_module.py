@@ -307,23 +307,24 @@ def render_schedule_calendar(user_name=None):
                     "客胜概率": result["prob_away_win"],
                 })
 
-                # 写入数据库（统一走保存函数，自动去重+真实比赛标记）
-                try:
-                    save_prediction_to_db(
-                        match_date=str(row["match_date"])[:10],
-                        home_team=home_name,
-                        away_team=away_name,
-                        league_code=row["league_code"],
-                        prob_home=result["prob_home_win"],
-                        prob_draw=result["prob_draw"],
-                        prob_away=result["prob_away_win"],
-                        predict_result=result["predict_result"],
-                        confidence=result["confidence"],
-                        predict_source="schedule_batch",
-                        user_name=user_name
-                    )
-                except:
-                    pass
+                # 写入数据库（有昵称才保存）
+                if user_name:
+                    try:
+                        save_prediction_to_db(
+                            match_date=str(row["match_date"])[:10],
+                            home_team=home_name,
+                            away_team=away_name,
+                            league_code=row["league_code"],
+                            prob_home=result["prob_home_win"],
+                            prob_draw=result["prob_draw"],
+                            prob_away=result["prob_away_win"],
+                            predict_result=result["predict_result"],
+                            confidence=result["confidence"],
+                            predict_source="schedule_batch",
+                            user_name=user_name
+                        )
+                    except:
+                        pass
             except:
                 continue
 
@@ -338,11 +339,9 @@ def render_schedule_calendar(user_name=None):
 
         st.session_state[batch_pred_key] = unique_results
 
-    st.markdown("---")
-
     # 批量预测结果展示
     if batch_pred_key in st.session_state and len(st.session_state[batch_pred_key]) > 0:
-        with st.expander(f"📊 批量预测结果（共 {len(st.session_state[batch_pred_key])} 场）", expanded=True):
+        with st.expander(f"📊 批量预测结果（共 {len(st.session_state[batch_pred_key])} 场）· 点击标题可折叠收起", expanded=True):
             df_batch = pd.DataFrame(st.session_state[batch_pred_key])
 
             # 置信度筛选
@@ -507,23 +506,24 @@ def render_match_row(row, df_hist):
                 result = predict_match(feature)
                 st.session_state[pred_key] = result
 
-                # 保存预测结果到数据库（统一走保存函数，自动去重+真实比赛标记）
-                try:
-                    save_prediction_to_db(
-                        match_date=str(row["match_date"])[:10],
-                        home_team=home_name,
-                        away_team=away_name,
-                        league_code=row["league_code"],
-                        prob_home=result["prob_home_win"],
-                        prob_draw=result["prob_draw"],
-                        prob_away=result["prob_away_win"],
-                        predict_result=result["predict_result"],
-                        confidence=result["confidence"],
-                        predict_source="schedule",
-                        user_name=user_name
-                    )
-                except Exception as e:
-                    pass  # 保存失败不影响展示
+                # 保存预测结果到数据库（有昵称才保存）
+                if user_name:
+                    try:
+                        save_prediction_to_db(
+                            match_date=str(row["match_date"])[:10],
+                            home_team=home_name,
+                            away_team=away_name,
+                            league_code=row["league_code"],
+                            prob_home=result["prob_home_win"],
+                            prob_draw=result["prob_draw"],
+                            prob_away=result["prob_away_win"],
+                            predict_result=result["predict_result"],
+                            confidence=result["confidence"],
+                            predict_source="schedule",
+                            user_name=user_name
+                        )
+                    except Exception as e:
+                        pass  # 保存失败不影响展示
 
             # 展示预测结果
             if pred_key in st.session_state:
@@ -595,23 +595,24 @@ def render_match_card(row, df_hist, user_name=None):
                 result = predict_match(feature)
                 st.session_state[pred_key] = result
 
-                # 保存到数据库
-                try:
-                    save_prediction_to_db(
-                        match_date=str(row["match_date"])[:10],
-                        home_team=home_name,
-                        away_team=away_name,
-                        league_code=row["league_code"],
-                        prob_home=result["prob_home_win"],
-                        prob_draw=result["prob_draw"],
-                        prob_away=result["prob_away_win"],
-                        predict_result=result["predict_result"],
-                        confidence=result["confidence"],
-                        predict_source="schedule",
-                        user_name=user_name
-                    )
-                except:
-                    pass
+                # 保存到数据库（有昵称才保存）
+                if user_name:
+                    try:
+                        save_prediction_to_db(
+                            match_date=str(row["match_date"])[:10],
+                            home_team=home_name,
+                            away_team=away_name,
+                            league_code=row["league_code"],
+                            prob_home=result["prob_home_win"],
+                            prob_draw=result["prob_draw"],
+                            prob_away=result["prob_away_win"],
+                            predict_result=result["predict_result"],
+                            confidence=result["confidence"],
+                            predict_source="schedule",
+                            user_name=user_name
+                        )
+                    except:
+                        pass
 
             # 展示预测结果
             if pred_key in st.session_state:

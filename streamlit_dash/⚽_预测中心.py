@@ -105,51 +105,40 @@ else:
 
 st.divider()
 
-# 免责声明
-st.warning("""
-**⚠️ 免责声明：本系统仅供机器学习研究与模型验证使用，所有预测结果均为模型算法输出，不构成任何决策建议。严禁用于其他用途。**
-历史数据来自 [football-data.co.uk](https://www.football-data.co.uk/)，模型为自研 LightGBM 三分类。
-""")
+# 顶部信息卡片（引导型，新用户也能看懂）
+col1, col2, col3 = st.columns(3)
 
-# 顶部统计卡片（仅统计真实比赛）
-col1, col2, col3, col4 = st.columns(4)
+# 卡片1：今日可预测
 today_str = pd.Timestamp.now().strftime("%Y-%m-%d")
 today_matches = len(df_schedule[df_schedule["match_date"].dt.strftime("%Y-%m-%d") == today_str])
-
-# 筛选真实比赛
-if not df_preds.empty and "is_real_match" in df_preds.columns:
-    df_real_preds = df_preds[df_preds["is_real_match"] == 1]
+# 最近开赛日
+future_matches = df_schedule[df_schedule["match_date"] >= pd.Timestamp.now().normalize()]
+if len(future_matches) > 0:
+    next_match_date = future_matches.iloc[0]["match_date"].strftime("%m月%d日")
 else:
-    df_real_preds = df_preds
+    next_match_date = "暂无"
 
-total_preds = len(df_real_preds)
-verified_preds = len(df_real_preds[df_real_preds["is_verified"] == 1]) if not df_real_preds.empty else 0
-acc = (df_real_preds[df_real_preds["is_verified"] == 1]["is_correct"].mean() * 100) if verified_preds > 0 else 0
+with col1:
+    st.metric("🎯 今日可预测", f"{today_matches} 场")
+    st.caption(f"最近开赛：{next_match_date}")
+    st.caption("↓ 下方点击赛事卡片开始预测")
 
-col1.metric("今日赛事", today_matches, "场")
-col2.metric("累计预测（真实）", total_preds, "次")
-col3.metric("已校验", verified_preds, "场")
-col4.metric("预测准确率", f"{acc:.1f}%" if verified_preds > 0 else "--")
+# 卡片2：本周赛事
+today = pd.Timestamp.now().normalize()
+week_end = today + pd.Timedelta(days=7)
+week_matches = len(df_schedule[(df_schedule["match_date"] >= today) & (df_schedule["match_date"] < week_end)])
+week_leagues = df_schedule[(df_schedule["match_date"] >= today) & (df_schedule["match_date"] < week_end)]["league_code"].nunique()
 
-# 数据新鲜度提醒
-try:
-    import sqlite3
-    _conn = sqlite3.connect(DB_PATH)
-    latest_date = pd.read_sql("SELECT MAX(match_date) as latest FROM match_feature_final", _conn).iloc[0]['latest']
-    _conn.close()
-    if latest_date:
-        latest_dt = pd.to_datetime(latest_date)
-        days_old = (pd.Timestamp.now() - latest_dt).days
-        latest_str = latest_dt.strftime("%Y-%m-%d")
-        
-        if days_old <= 7:
-            st.success(f"✅ 数据最新 | 最新比赛: {latest_str}（{days_old}天前）")
-        elif days_old <= 14:
-            st.warning(f"⚠️ 建议更新数据 | 最新比赛: {latest_str}（{days_old}天前）")
-        else:
-            st.error(f"🔴 数据已过期 | 最新比赛: {latest_str}（{days_old}天前），请及时更新")
-except:
-    pass
+with col2:
+    st.metric("📅 本周赛事", f"{week_matches} 场")
+    st.caption(f"覆盖 {week_leagues} 大联赛")
+    st.caption("左右切换查看更多")
+
+# 卡片3：模型验证准确率
+with col3:
+    st.metric("🤖 模型验证准确率", "64.5%")
+    st.caption("基于 3 万场历史数据")
+    st.caption("OOS 验证集 · 持续优化中")
 
 st.divider()
 
@@ -161,145 +150,140 @@ tab_calendar, tab_predict, tab_track = st.tabs([
 ])
 
 with tab_calendar:
-    if not current_user:
-        st.info("👆 请先在顶部输入昵称，再使用赛事日历功能")
-    else:
-        render_schedule_calendar(user_name=current_user)
+    # 赛事日历公开可见，不需要昵称
+    render_schedule_calendar(user_name=current_user if current_user else None)
 
-    # ===== AI 观点区块 =====
+    # ===== AI 观点区块（折叠式）=====
     st.divider()
-    st.subheader("🤖 AI 出手参考")
-    st.caption("基于当前模型批量计算未来赛事的三AI出手建议，仅供决策参考")
-    
-    # 日期范围选择
-    col_d1, col_d2 = st.columns([1, 3])
-    with col_d1:
-        days_ahead = st.slider("未来天数", min_value=1, max_value=14, value=3, key="ai_view_days")
-    
-    today = pd.Timestamp.now().normalize()
-    end_date = today + pd.Timedelta(days=days_ahead)
-    
-    # 筛选赛程
-    df_upcoming = df_schedule[
-        (df_schedule["match_date"].dt.normalize() >= today) & 
-        (df_schedule["match_date"].dt.normalize() <= end_date)
-    ].copy().sort_values("match_date")
-    
-    # 过滤五大联赛（有模型的）
-    valid_leagues = ['E0', 'D1', 'LLA', 'SER', 'LIG']
-    df_upcoming = df_upcoming[df_upcoming["league_code"].isin(valid_leagues)]
-    
-    st.info(f"📅 未来 {days_ahead} 天共 {len(df_upcoming)} 场五大联赛赛事")
-    
-    if st.button("🔍 批量计算三AI参考", type="primary", key="calc_ai_view", disabled=not current_user):
-        if not current_user:
-            st.warning("请先在顶部输入昵称")
-        elif len(df_upcoming) == 0:
-            st.warning("暂无符合条件的赛事")
-        else:
-            from ai_intent_module import calc_ai_bet_intent
-            from match_predict import predict_match
-            from streamlit_dash.feature_auto_build import build_feature_by_teams
-            
-            results = []
-            progress_bar = st.progress(0)
-            
-            for idx, (_, row) in enumerate(df_upcoming.iterrows()):
-                home_std = row["home_team"]
-                away_std = row["away_team"]
-                league = row["league_code"]
+    st.info("✨ **AI 出手参考**：三AI共识推荐 + 置信度筛选，点击下方展开查看 ↓")
+    with st.expander("🤖 展开 AI 出手参考", expanded=False):
+        st.caption("基于当前模型批量计算未来赛事的三AI出手建议，仅供决策参考")
+        
+        # 日期范围选择
+        col_d1, col_d2 = st.columns([1, 3])
+        with col_d1:
+            days_ahead = st.slider("未来天数", min_value=1, max_value=14, value=3, key="ai_view_days")
+        
+        today = pd.Timestamp.now().normalize()
+        end_date = today + pd.Timedelta(days=days_ahead)
+        
+        # 筛选赛程
+        df_upcoming = df_schedule[
+            (df_schedule["match_date"].dt.normalize() >= today) & 
+            (df_schedule["match_date"].dt.normalize() <= end_date)
+        ].copy().sort_values("match_date")
+        
+        # 过滤五大联赛（有模型的）
+        valid_leagues = ['E0', 'D1', 'LLA', 'SER', 'LIG']
+        df_upcoming = df_upcoming[df_upcoming["league_code"].isin(valid_leagues)]
+        
+        st.info(f"📅 未来 {days_ahead} 天共 {len(df_upcoming)} 场五大联赛赛事")
+        
+        if st.button("🔍 批量计算三AI参考", type="primary", key="calc_ai_view"):
+            if len(df_upcoming) == 0:
+                st.warning("暂无符合条件的赛事")
+            else:
+                from ai_intent_module import calc_ai_bet_intent
+                from match_predict import predict_match
+                from streamlit_dash.feature_auto_build import build_feature_by_teams
                 
-                try:
-                    # 构建特征（用默认赔率降级）
-                    feat = build_feature_by_teams(
-                        df_all, home_std, away_std,
-                        odds_draw_real=0.28, odds_lose_real=0.33,
-                        shot_diff=0, league_code=league
+                results = []
+                progress_bar = st.progress(0)
+                
+                for idx, (_, row) in enumerate(df_upcoming.iterrows()):
+                    home_std = row["home_team"]
+                    away_std = row["away_team"]
+                    league = row["league_code"]
+                    
+                    try:
+                        # 构建特征（用默认赔率降级）
+                        feat = build_feature_by_teams(
+                            df_all, home_std, away_std,
+                            odds_draw_real=0.28, odds_lose_real=0.33,
+                            shot_diff=0, league_code=league
+                        )
+                        # 预测
+                        pred = predict_match(feat, is_home_scene=True)
+                        conf = pred["confidence"]
+                        result = pred["predict_result"]
+                        
+                        # 计算AI观点
+                        intent = calc_ai_bet_intent(conf, result)
+                        
+                        results.append({
+                            "比赛日期": row["match_date"].strftime("%m-%d"),
+                            "主队": std_2_cn.get(home_std, home_std),
+                            "客队": std_2_cn.get(away_std, away_std),
+                            "预测方向": result,
+                            "置信度": f"{conf:.1%}",
+                            "共识等级": intent["consensus_label"],
+                            "激进AI": "✅建议" if intent["intents"]["激进AI"]["will_bet"] else "❌观望",
+                            "中立AI": "✅建议" if intent["intents"]["中立AI"]["will_bet"] else "❌观望",
+                            "保守AI": "✅建议" if intent["intents"]["保守AI"]["will_bet"] else "❌观望",
+                        })
+                    except Exception as e:
+                        results.append({
+                            "比赛日期": row["match_date"].strftime("%m-%d"),
+                            "主队": std_2_cn.get(home_std, home_std),
+                            "客队": std_2_cn.get(away_std, away_std),
+                            "预测方向": "—",
+                            "置信度": "—",
+                            "共识等级": "数据不足",
+                            "激进AI": "—",
+                            "中立AI": "—",
+                            "保守AI": "—",
+                        })
+                    
+                    progress_bar.progress((idx + 1) / len(df_upcoming))
+                
+                progress_bar.empty()
+                df_ai_view = pd.DataFrame(results)
+                
+                # 共识等级排序映射
+                consensus_order = {
+                    "🛡️ 三AI共识": 0,
+                    "⚖️ 两AI共识": 1,
+                    "🔥 仅激进关注": 2,
+                    "无AI出手": 3,
+                    "数据不足": 4
+                }
+                df_ai_view["共识排序"] = df_ai_view["共识等级"].map(consensus_order)
+                df_ai_view = df_ai_view.sort_values(["共识排序", "置信度"], ascending=[True, False])
+                df_ai_view = df_ai_view.drop(columns=["共识排序"])
+                
+                # 精选：三AI全票通过
+                df_top = df_ai_view[df_ai_view["共识等级"] == "🛡️ 三AI共识"]
+                
+                if len(df_top) > 0:
+                    st.markdown("### 🏆 精选推荐（三AI共识）")
+                    st.caption("三个AI同时建议关注，可靠性最高")
+                    for _, row in df_top.iterrows():
+                        st.markdown(f"""
+                        <div style="padding:12px;background:#f0f9eb;border-left:4px solid #67c23a;border-radius:6px;margin-bottom:8px">
+                            <b>{row['比赛日期']} · {row['主队']} vs {row['客队']}</b><br>
+                            <span style="color:#67c23a">预测：{row['预测方向']}</span> · 
+                            置信度：{row['置信度']}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    st.divider()
+                
+                # 完整表格 + 筛选
+                st.markdown("### 📋 全部赛事参考")
+                col_f1, col_f2 = st.columns(2)
+                with col_f1:
+                    filter_consensus = st.multiselect(
+                        "按共识等级筛选",
+                        ["🛡️ 三AI共识", "⚖️ 两AI共识", "🔥 仅激进关注", "无AI出手"],
+                        default=["🛡️ 三AI共识", "⚖️ 两AI共识"],
+                        key="ai_view_filter"
                     )
-                    # 预测
-                    pred = predict_match(feat, is_home_scene=True)
-                    conf = pred["confidence"]
-                    result = pred["predict_result"]
-                    
-                    # 计算AI观点
-                    intent = calc_ai_bet_intent(conf, result)
-                    
-                    results.append({
-                        "比赛日期": row["match_date"].strftime("%m-%d"),
-                        "主队": std_2_cn.get(home_std, home_std),
-                        "客队": std_2_cn.get(away_std, away_std),
-                        "预测方向": result,
-                        "置信度": f"{conf:.1%}",
-                        "共识等级": intent["consensus_label"],
-                        "激进AI": "✅建议" if intent["intents"]["激进AI"]["will_bet"] else "❌观望",
-                        "中立AI": "✅建议" if intent["intents"]["中立AI"]["will_bet"] else "❌观望",
-                        "保守AI": "✅建议" if intent["intents"]["保守AI"]["will_bet"] else "❌观望",
-                    })
-                except Exception as e:
-                    results.append({
-                        "比赛日期": row["match_date"].strftime("%m-%d"),
-                        "主队": std_2_cn.get(home_std, home_std),
-                        "客队": std_2_cn.get(away_std, away_std),
-                        "预测方向": "—",
-                        "置信度": "—",
-                        "共识等级": "数据不足",
-                        "激进AI": "—",
-                        "中立AI": "—",
-                        "保守AI": "—",
-                    })
                 
-                progress_bar.progress((idx + 1) / len(df_upcoming))
-            
-            progress_bar.empty()
-            df_ai_view = pd.DataFrame(results)
-            
-            # 共识等级排序映射
-            consensus_order = {
-                "🛡️ 三AI共识": 0,
-                "⚖️ 两AI共识": 1,
-                "🔥 仅激进关注": 2,
-                "无AI出手": 3,
-                "数据不足": 4
-            }
-            df_ai_view["共识排序"] = df_ai_view["共识等级"].map(consensus_order)
-            df_ai_view = df_ai_view.sort_values(["共识排序", "置信度"], ascending=[True, False])
-            df_ai_view = df_ai_view.drop(columns=["共识排序"])
-            
-            # 精选：三AI全票通过
-            df_top = df_ai_view[df_ai_view["共识等级"] == "🛡️ 三AI共识"]
-            
-            if len(df_top) > 0:
-                st.markdown("### 🏆 精选推荐（三AI共识）")
-                st.caption("三个AI同时建议关注，可靠性最高")
-                for _, row in df_top.iterrows():
-                    st.markdown(f"""
-                    <div style="padding:12px;background:#f0f9eb;border-left:4px solid #67c23a;border-radius:6px;margin-bottom:8px">
-                        <b>{row['比赛日期']} · {row['主队']} vs {row['客队']}</b><br>
-                        <span style="color:#67c23a">预测：{row['预测方向']}</span> · 
-                        置信度：{row['置信度']}
-                    </div>
-                    """, unsafe_allow_html=True)
-                st.divider()
-            
-            # 完整表格 + 筛选
-            st.markdown("### 📋 全部赛事参考")
-            col_f1, col_f2 = st.columns(2)
-            with col_f1:
-                filter_consensus = st.multiselect(
-                    "按共识等级筛选",
-                    ["🛡️ 三AI共识", "⚖️ 两AI共识", "🔥 仅激进关注", "无AI出手"],
-                    default=["🛡️ 三AI共识", "⚖️ 两AI共识"],
-                    key="ai_view_filter"
-                )
-            
-            df_show = df_ai_view.copy()
-            if filter_consensus:
-                df_show = df_show[df_show["共识等级"].isin(filter_consensus)]
-            
-            st.dataframe(df_show, use_container_width=True, hide_index=True)
-            st.caption("💡 市场概率使用默认估算值，实际置信度以真实数据为准；共识度越高参考价值越强")
-    else:
-        st.info("👆 点击上方按钮批量计算三AI参考")
+                df_show = df_ai_view.copy()
+                if filter_consensus:
+                    df_show = df_show[df_show["共识等级"].isin(filter_consensus)]
+                
+                st.dataframe(df_show, use_container_width=True, hide_index=True)
+                st.caption("💡 市场概率使用默认估算值，实际置信度以真实数据为准；共识度越高参考价值越强")
 
 with tab_predict:
     if not current_user:
@@ -316,32 +300,45 @@ with tab_track:
         # 统计范围选择
         has_user = "user_name" in df_preds.columns
         if has_user:
-            stat_scope = st.radio(
-                "统计范围",
-                ["全部人员", "仅当前用户"],
-                horizontal=True,
-                key="stat_scope",
-                label_visibility="collapsed"
-            )
+            col_scope1, col_scope2 = st.columns([1, 1])
+            with col_scope1:
+                stat_scope = st.radio(
+                    "统计范围",
+                    ["全部人员", "仅当前用户"],
+                    horizontal=True,
+                    key="stat_scope",
+                    label_visibility="collapsed"
+                )
+            with col_scope2:
+                match_type = st.radio(
+                    "比赛类型",
+                    ["真实预测", "模拟预测", "全部"],
+                    horizontal=True,
+                    key="match_type",
+                    label_visibility="collapsed"
+                )
         else:
             stat_scope = "全部人员"
+            match_type = "真实预测"
         
-        # 筛选真实比赛 + 人员范围
+        # 筛选比赛类型 + 人员范围
+        df_filtered = df_preds.copy()
         if "is_real_match" in df_preds.columns:
-            df_real = df_preds[df_preds["is_real_match"] == 1]
-        else:
-            df_real = df_preds
+            if match_type == "真实预测":
+                df_filtered = df_filtered[df_filtered["is_real_match"] == 1]
+            elif match_type == "模拟预测":
+                df_filtered = df_filtered[df_filtered["is_real_match"] == 0]
         
         if stat_scope == "仅当前用户" and current_user:
-            df_real = df_real[df_real["user_name"] == current_user]
+            df_filtered = df_filtered[df_filtered["user_name"] == current_user]
         
-        verified = df_real[df_real["is_verified"] == 1].copy()
+        verified = df_filtered[df_filtered["is_verified"] == 1].copy()
         total_v = len(verified)
         correct_v = verified["is_correct"].sum() if total_v > 0 else 0
         acc_v = correct_v / total_v if total_v > 0 else 0
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("真实比赛预测", len(df_real))
+        c1.metric("预测场次", len(df_filtered))
         c2.metric("已完赛校验", total_v)
         c3.metric("预测正确", int(correct_v))
         c4.metric("整体准确率", f"{acc_v:.2%}" if total_v > 0 else "--")
@@ -498,10 +495,35 @@ with tab_track:
             st.dataframe(df_show, use_container_width=True, hide_index=True)
 
 # 底部更新日志（默认折叠，不占空间）
-APP_VERSION = "v0.4.2"
+APP_VERSION = "v0.4.4"
 st.divider()
+
+# 免责声明
+st.warning("""
+**⚠️ 免责声明：本系统仅供机器学习研究与模型验证使用，所有预测结果均为模型算法输出，不构成任何决策建议。严禁用于其他用途。**
+历史数据来自 [football-data.co.uk](https://www.football-data.co.uk/)，模型为自研 LightGBM 三分类。
+""")
+
 with st.expander(f"📝 更新日志 · {APP_VERSION} 🆕", expanded=False):
     st.markdown("""
+**v0.4.4 — 2026-07-27（前端体验大优化）**
+- 首屏重构：4张统计卡片 → 3张引导型卡片（今日可预测/本周赛事/模型准确率）
+- 赛事日历公开化：无需昵称即可浏览赛程、查看预测结果
+- AI出手参考改为折叠式，默认收起，首屏更清爽
+- 预测历史增加「真实/模拟」筛选，统计维度更清晰
+- 免责声明移至更新日志上方，数据新鲜度移至页面底部
+- 修复模型判断依据ELO特征中文映射缺失
+- 修复数据看板球队名映射缺失问题
+
+> 🎉 **特别感谢**：「贵阳梅西」提供的新手体验优化建议，本轮首屏引导优化、赛事日历公开化、AI出手参考折叠等功能均来自他的反馈 👏
+
+**v0.4.3 — 2026-07-27（ELO扩展版）**
+- 模型准确率提升至 64.47%（较v0.4再提升 0.41%）
+- 新增 8 个 ELO 扩展特征（对手加权攻防 + ELO趋势）
+- ELO 特征总贡献达 19.97%，实力评估维度更丰富
+- 5 大联赛独立模型同步升级，平均准确率 62.80%
+- 平局二分类模型同步升级至 45 维
+
 **v0.4.2 — 2026-07-26（架构优化）**
 - 功能重定位：预测中心/模型验证/数据看板 三页面职责更清晰
 - 赛事日历升级为默认首屏（先粗后精）
@@ -547,3 +569,17 @@ with st.expander(f"📝 更新日志 · {APP_VERSION} 🆕", expanded=False):
 - 三AI出手建议计算
     """)
     st.caption("完整开发计划见 DEVELOPMENT_PLAN.md")
+
+# 数据新鲜度提醒（底部小字，仅运维参考）
+try:
+    import sqlite3
+    _conn = sqlite3.connect(DB_PATH)
+    latest_date = pd.read_sql("SELECT MAX(match_date) as latest FROM match_feature_final", _conn).iloc[0]['latest']
+    _conn.close()
+    if latest_date:
+        latest_dt = pd.to_datetime(latest_date)
+        days_old = (pd.Timestamp.now() - latest_dt).days
+        latest_str = latest_dt.strftime("%Y-%m-%d")
+        st.caption(f"📊 训练数据截止：{latest_str}（{days_old}天前）")
+except:
+    pass
