@@ -3,7 +3,7 @@ import numpy as np
 import math
 # 【2026-07-23 移除：import joblib，改用原生lgb加载模型】
 import lightgbm as lgb
-import joblib
+import json
 import os
 import pickle
 
@@ -67,12 +67,23 @@ _league_model_cache = {}
 # 【2026-07-24 优化：客场模型特征互换不完整，融合反而降准，改用单主场模型】
 home_model = lgb.Booster(model_file=os.path.join(MODEL_DIR, "home_model.pkl"))
 
-# 【2026-07-24 新增：泊松进球模型，与LGB等权融合提升胜平负准确率】
-poisson_home_model = joblib.load(os.path.join(MODEL_DIR, "poisson_home_goals.pkl"))
-poisson_away_model = joblib.load(os.path.join(MODEL_DIR, "poisson_away_goals.pkl"))
+# 【2026-07-29 修复：泊松模型改用参数化方式，彻底解决pickle跨平台兼容性问题】
+# PoissonRegressor = 线性模型，预测公式: lambda = exp(X @ coef + intercept)
+with open(os.path.join(MODEL_DIR, "poisson_model_params.json"), "r") as f:
+    _poisson_params = json.load(f)
+_poisson_home_coef = np.array(_poisson_params["home_coef"])
+_poisson_home_intercept = _poisson_params["home_intercept"]
+_poisson_away_coef = np.array(_poisson_params["away_coef"])
+_poisson_away_intercept = _poisson_params["away_intercept"]
 
-# 【2026-07-25 新增：平局二分类专项模型，提升平局召回】
-draw_binary_model = joblib.load(os.path.join(MODEL_DIR, "draw_binary_model.pkl"))
+def _predict_poisson_goals(X_poi, is_home=True):
+    """手动计算泊松进球预测，不依赖sklearn pickle"""
+    coef = _poisson_home_coef if is_home else _poisson_away_coef
+    intercept = _poisson_home_intercept if is_home else _poisson_away_intercept
+    return np.exp(X_poi @ coef + intercept)
+
+# 【2026-07-29 修复：平局二分类模型改用LightGBM原生格式，解决pickle兼容性】
+draw_binary_model = lgb.Booster(model_file=os.path.join(MODEL_DIR, "draw_binary_model.txt"))
 
 # 【2026-07-26 新增：Platt概率校准器】
 _calibrator = None
@@ -141,8 +152,8 @@ def calc_poisson_1x2(feature_array):
     X = np.array(feature_array, dtype=np.float64).reshape(1, -1)
     X_poi = X[:, POISSON_FEAT_IDX]
 
-    h_lam = float(poisson_home_model.predict(X_poi)[0])
-    a_lam = float(poisson_away_model.predict(X_poi)[0])
+    h_lam = float(_predict_poisson_goals(X_poi, is_home=True)[0])
+    a_lam = float(_predict_poisson_goals(X_poi, is_home=False)[0])
     h_lam = max(min(h_lam, 10.0), 0.3)
     a_lam = max(min(a_lam, 10.0), 0.3)
 
@@ -205,8 +216,8 @@ def predict_match(feature_array, is_home_scene: bool = True):
         f"特征数量不符，预期{expect_feature_cnt}维，实际{X.shape[1]}维，请核对上游特征构造"
     prob_lgb = home_model.predict(X, num_iteration=home_model.best_iteration)[0]
     prob_poisson = calc_poisson_1x2(feature_array)
-    # 平局二分类预测
-    prob_draw_binary = float(draw_binary_model.predict_proba(X)[0][1])
+    # 平局二分类预测（LightGBM原生格式，predict直接返回正类概率）
+    prob_draw_binary = float(draw_binary_model.predict(X)[0])
     
     # 三模型融合：主胜/客胜 = LGB + 泊松；平局 = LGB + 泊松 + 平局专项
     prob_h = prob_lgb[0] * FUSION_WEIGHT_LGB + prob_poisson[0] * FUSION_WEIGHT_POISSON
@@ -224,8 +235,8 @@ def predict_match(feature_array, is_home_scene: bool = True):
 
     # 泊松进球期望值（用于比分/大小球预测）
     X_poi = X[:, POISSON_FEAT_IDX]
-    h_lam = float(poisson_home_model.predict(X_poi)[0])
-    a_lam = float(poisson_away_model.predict(X_poi)[0])
+    h_lam = float(_predict_poisson_goals(X_poi, is_home=True)[0])
+    a_lam = float(_predict_poisson_goals(X_poi, is_home=False)[0])
     h_lam = max(min(h_lam, 10.0), 0.3)
     a_lam = max(min(a_lam, 10.0), 0.3)
 
@@ -313,8 +324,8 @@ def predict_match_league(feature_array_29, league_cfg_code, is_home_scene: bool 
     poi_base = [feat_47[i] for i in base_idx]
     poi_feats = poi_base + league_onehot.get(league_cfg_code, [0,0,0,0,0])
 
-    h_lam = max(float(poisson_home_model.predict([poi_feats])[0]), 0.3)
-    a_lam = max(float(poisson_away_model.predict([poi_feats])[0]), 0.3)
+    h_lam = max(float(_predict_poisson_goals(np.array([poi_feats]), is_home=True)[0]), 0.3)
+    a_lam = max(float(_predict_poisson_goals(np.array([poi_feats]), is_home=False)[0]), 0.3)
 
     # 泊松转胜平负
     p_h = p_d = p_a = 0.0
@@ -332,7 +343,7 @@ def predict_match_league(feature_array_29, league_cfg_code, is_home_scene: bool 
     # 三模型融合：主胜/客胜 = LGB + 泊松；平局 = LGB + 泊松 + 平局专项
     # 构造34维特征给平局二分类模型（29维 + 联赛独热5维）
     draw_feats = list(feature_array_29) + league_onehot.get(league_cfg_code, [0,0,0,0,0])
-    prob_draw_binary = float(draw_binary_model.predict_proba([draw_feats])[0][1])
+    prob_draw_binary = float(draw_binary_model.predict(np.array([draw_feats]))[0])
     
     prob_h = prob_lgb[0] * FUSION_WEIGHT_LGB + prob_poisson[0] * FUSION_WEIGHT_POISSON
     prob_a = prob_lgb[2] * FUSION_WEIGHT_LGB + prob_poisson[2] * FUSION_WEIGHT_POISSON

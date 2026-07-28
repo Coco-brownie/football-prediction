@@ -39,6 +39,7 @@ __pycache__/
 config.json
 *.json
 !model/poisson_features.json
+!model/poisson_model_params.json
 
 # 临时文件
 *.tmp
