@@ -32,32 +32,57 @@ for cfg_code, team_map in LEAGUE_TEAM_MAP.items():
     for eng_std, (full_eng, cn_name) in team_map.items():
         std_2_cn[eng_std] = cn_name
 
-# AI配置：风格定位 + 参数
+# AI配置：角色卡风格 + 人设
 AI_PROFILES = {
-    "激进AI": {
-        "icon": "🔥",
-        "color": "#e74c3c",
-        "style_tag": "高频价值型",
-        "style_desc": "覆盖广出手多，加价值筛选的进攻型策略",
-        "params": "置信度≥50% · 凯利0.90 · 20%安全边际",
-        "suitable": "追求高覆盖、能承受较大波动的场景"
+    "保守AI": {
+        "display_name": "磐石#S01",
+        "icon": "🪨",
+        "color": "#27ae60",
+        "style_tag": "防守型",
+        "style_desc": "不急，等机会",
+        "skill_name": "【稳如泰山】",
+        "skill_desc": "只做有价值的比赛，仓位最轻，抗波动能力最强",
+        "personality": "佛系老大哥 · 稳如泰山 · 抗抽水最强",
+        "params": "置信度≥55% · 凯利0.20 · 20%安全边际",
+        "suitable": "求稳为主、优先控制风险的场景",
     },
     "中立AI": {
+        "display_name": "天秤#S02",
         "icon": "⚖️",
         "color": "#3498db",
-        "style_tag": "均衡精选型",
-        "style_desc": "收益风险兼顾，中频高胜率",
-        "params": "置信度≥65% · 凯利0.60 · 20%安全边际",
-        "suitable": "大多数场景的默认选择，攻守兼备"
+        "style_tag": "均衡型",
+        "style_desc": "两边都要，但要算清楚",
+        "skill_name": "【均衡之道】",
+        "skill_desc": "在收益和风险之间找最优平衡点，不冒进也不保守",
+        "personality": "均衡大师 · 选择困难症救星 · 综合最优",
+        "params": "置信度≥55% · 凯利0.60 · 20%安全边际",
+        "suitable": "大多数场景的默认选择，攻守兼备",
     },
-    "保守AI": {
-        "icon": "🛡️",
-        "color": "#27ae60",
-        "style_tag": "极致稳型",
-        "style_desc": "严格筛选只出黄金稳手，夏普最高回撤最小",
-        "params": "置信度≥70% · 凯利0.20 · 30%安全边际",
-        "suitable": "求稳为主、优先控制风险的场景"
-    }
+    "激进AI": {
+        "display_name": "猎鹰#S03",
+        "icon": "🦅",
+        "color": "#e74c3c",
+        "style_tag": "攻击型",
+        "style_desc": "梭哈，赢了会所嫩模",
+        "skill_name": "【疾风突袭】",
+        "skill_desc": "有价值就敢上，仓位最重，波动最大",
+        "personality": "激进派猎手 · 收益天花板 · 波动大",
+        "params": "置信度≥55% · 凯利0.90 · 20%安全边际",
+        "suitable": "追求高覆盖、能承受较大波动的场景",
+    },
+    "串关AI": {
+        "display_name": "八卦#S04",
+        "icon": "☯️",
+        "color": "#9b59b6",
+        "style_tag": "策略型",
+        "style_desc": "分散风险，稳中求胜",
+        "skill_name": "【八卦阵】",
+        "skill_desc": "2串1保守型，用串关分散风险，以柔克刚",
+        "personality": "防守大师 · 串关狂魔 · 以柔克刚",
+        "params": "2串1 · 置信度≥70% · 凯利0.20",
+        "suitable": "喜欢串关、追求高赔率的场景",
+        "placeholder": True,
+    },
 }
 
 
@@ -200,12 +225,38 @@ def get_consensus_analysis(season_year):
 
 # ========== 页面主体 ==========
 st.markdown("# 🏆 模型验证")
-st.markdown("赛季制 · 每赛季1000初始验证基数 · 凯利动态权重 · 严格OOS验证")
+st.markdown("赛季制 · 每赛季500初始验证基数 · 凯利动态权重 · WF金标准验证")
+
+# 重大提醒
+st.error("""
+🚨 **重大提醒：v1.0.0之前版本存在特征泄露问题，所有历史回测数据均严重虚高，请勿参考！**
+
+当前页面正在逐步更新为WF（Walk Forward）赛季重置版的真实验证数据。
+部分旧数据可能尚未更新，仅供参考。
+""")
 
 # 赛季选择
 seasons = get_all_seasons()
 if not seasons:
-    st.info("暂无历史回测数据，正在初始化...")
+    st.info("""
+    ### 📊 模型验证数据正在更新中...
+    
+    **为什么没有数据？**
+    - v1.0.0之前的版本存在特征泄露问题，所有历史回测数据均严重虚高
+    - 为了避免误导，旧的AI验证数据已全部清空
+    - 新的WF（Walk Forward）赛季重置版验证数据正在逐步生成中
+    
+    **当前状态：**
+    - ✅ 特征泄露已完全修复
+    - ✅ 所有模型已重新训练
+    - ✅ 三级验证体系已建立
+    - 🔄 AI策略回测数据待生成
+    
+    **可以先看这些：**
+    - 下方「策略规则说明」里有WF版的核心结论
+    - 「置信度 vs 实际准确率」有全量版参考数据（仅供参考，偏乐观）
+    - 预测中心可以正常使用单场预测功能
+    """)
     st.stop()
 
 col_sel, _ = st.columns([1, 3])
@@ -231,23 +282,26 @@ with st.expander("📜 15赛季历史平均战绩（新赛季参考基准）", e
     
     if len(hist_df) > 0:
         display_hist = hist_df.copy()
+        # 映射AI展示名
+        display_hist['AI'] = display_hist['ai_name'].apply(
+            lambda x: f"{AI_PROFILES.get(x, {}).get('icon', '🤖')} {AI_PROFILES.get(x, {}).get('display_name', x)}"
+        )
         display_hist['平均胜率'] = display_hist['avg_win_rate'].apply(lambda x: f"{x:.1%}")
         display_hist['平均回撤'] = display_hist['avg_max_dd'].apply(lambda x: f"{x:.1%}")
         display_hist['场均出手'] = display_hist['avg_bets'].round(0).astype(int)
         display_hist['深撤赛季'] = display_hist['bankrupt_seasons'].astype(str) + '/' + display_hist['total_seasons'].astype(str)
-        display_hist = display_hist.rename(columns={'ai_name': 'AI'})
         st.dataframe(display_hist[['AI', '平均胜率', '平均回撤', '场均出手', '深撤赛季']], 
                      use_container_width=True, hide_index=True)
     st.caption("💡 新赛季开局参考：基于15个完整赛季的Walk-Forward OOS回测数据")
 
-# ========== 三个AI核心指标卡片 ==========
-st.markdown("## 📊 本赛季表现对比")
+# ========== 四个AI核心指标卡片（角色卡风格） ==========
+st.markdown("## 🎴 AI 策略角色卡")
 
 summary_df = get_season_summary(selected_season)
-cols = st.columns(3)
+cols = st.columns(4)
 
 for idx, (ai_name, profile) in enumerate(AI_PROFILES.items()):
-    ai_data = summary_df[summary_df['ai_name'] == ai_name]
+    ai_data = summary_df[summary_df['ai_name'] == ai_name] if not profile.get('placeholder') else pd.DataFrame()
     with cols[idx]:
         if len(ai_data) > 0:
             row = ai_data.iloc[0]
@@ -264,75 +318,93 @@ for idx, (ai_name, profile) in enumerate(AI_PROFILES.items()):
             conf_dist = get_confidence_distribution(ai_name, selected_season)
             
             st.markdown(f"""
-            <div style="background: linear-gradient(135deg, {profile['color']}15, {profile['color']}05); 
-                        border-left: 4px solid {profile['color']}; border-radius: 8px; padding: 16px; margin-bottom: 10px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <span style="font-size: 18px; font-weight: bold;">{profile['icon']} {ai_name}</span>
-                    <span style="font-size: 11px; padding: 2px 8px; background: {profile['color']}20; 
-                          color: {profile['color']}; border-radius: 10px;">{profile['style_tag']}</span>
+            <div style="background: linear-gradient(135deg, {profile['color']}20, {profile['color']}08); 
+                        border: 2px solid {profile['color']}40; border-radius: 12px; padding: 16px; margin-bottom: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span style="font-size: 22px; font-weight: bold;">{profile['icon']} {profile['display_name']}</span>
+                    <span style="font-size: 11px; padding: 3px 8px; background: {'#27ae60' if not bankrupt else '#e74c3c'}20; 
+                          color: {'#27ae60' if not bankrupt else '#e74c3c'}; border-radius: 10px; font-weight: bold;">
+                        {'✅ 存活' if not bankrupt else '📉 回撤'}
+                    </span>
                 </div>
-                <div style="font-size: 12px; color: #666; margin-bottom: 12px;">{profile['style_desc']}</div>
+                <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 10px;">
+                    {profile['style_tag']} · {profile['personality']}
+                </div>
+                <div style="font-size: 13px; color: #666; margin-bottom: 12px; font-style: italic;">
+                    "{profile['style_desc']}"
+                </div>
+                <div style="background: {profile['color']}10; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+                    <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 6px;">
+                        ⚡ {profile['skill_name']}
+                    </div>
+                    <div style="font-size: 12px; color: #555; line-height: 1.5;">
+                        {profile['skill_desc']}
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
+                    <div>
+                        <div style="color: #888; font-size: 11px;">胜率</div>
+                        <div style="font-weight: bold; color: #333; font-size: 14px;">{win_rate:.1%}</div>
+                    </div>
+                    <div>
+                        <div style="color: #888; font-size: 11px;">回撤</div>
+                        <div style="font-weight: bold; color: #e74c3c; font-size: 14px;">{max_dd:.1%}</div>
+                    </div>
+                    <div>
+                        <div style="color: #888; font-size: 11px;">出手</div>
+                        <div style="font-weight: bold; color: #333; font-size: 14px;">{bets}场</div>
+                    </div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
             
-            # 指标用原生组件，避免HTML渲染问题
-            m1, m2 = st.columns(2)
-            m1.metric("胜率", f"{win_rate:.1%}")
-            m2.metric("最大回撤", f"{max_dd:.1%}")
-            m3, m4 = st.columns(2)
-            m3.metric("出手场次", f"{bets}场")
-            m4.metric("状态", status)
-            
-            st.caption(f"💡 {profile['style_desc']}")
-            st.caption(f"置信分布: 高{conf_dist.get('high_pct', 0):.0%} · 中{conf_dist.get('mid_pct', 0):.0%} · 低{conf_dist.get('low_pct', 0):.0%}")
+            st.caption(f"📊 参数：{profile['params']}")
+            st.caption(f"🎯 置信分布：高{conf_dist.get('high_pct', 0):.0%} · 中{conf_dist.get('mid_pct', 0):.0%} · 低{conf_dist.get('low_pct', 0):.0%}")
         else:
+            # 占位符AI（暂无数据）
             st.markdown(f"""
-            <div style="background: #f5f5f5; border-radius: 8px; padding: 20px; text-align: center; color: #999;">
-                {profile['icon']} {ai_name}<br>暂无数据
+            <div style="background: linear-gradient(135deg, {profile['color']}15, {profile['color']}05); 
+                        border: 2px dashed {profile['color']}40; border-radius: 12px; padding: 16px; margin-bottom: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span style="font-size: 22px; font-weight: bold;">{profile['icon']} {profile['display_name']}</span>
+                    <span style="font-size: 11px; padding: 3px 8px; background: #99999920; 
+                          color: #999; border-radius: 10px; font-weight: bold;">
+                        🚧 准备中
+                    </span>
+                </div>
+                <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 10px;">
+                    {profile['style_tag']} · {profile['personality']}
+                </div>
+                <div style="font-size: 13px; color: #666; margin-bottom: 12px; font-style: italic;">
+                    "{profile['style_desc']}"
+                </div>
+                <div style="background: {profile['color']}10; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+                    <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 6px;">
+                        ⚡ {profile['skill_name']}
+                    </div>
+                    <div style="font-size: 12px; color: #555; line-height: 1.5;">
+                        {profile['skill_desc']}
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
+                    <div>
+                        <div style="color: #888; font-size: 11px;">胜率</div>
+                        <div style="font-weight: bold; color: #999; font-size: 14px;">--</div>
+                    </div>
+                    <div>
+                        <div style="color: #888; font-size: 11px;">回撤</div>
+                        <div style="font-weight: bold; color: #999; font-size: 14px;">--</div>
+                    </div>
+                    <div>
+                        <div style="color: #888; font-size: 11px;">出手</div>
+                        <div style="font-weight: bold; color: #999; font-size: 14px;">--</div>
+                    </div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
-
-# ========== 积分走势图 ==========
-with st.expander("📈 积分走势（对数刻度，参考相对节奏）", expanded=False):
-    st.caption("单赛季内积分变化（每个赛季独立重置1000），复利效应导致数字虚高，主要看相对节奏和回撤深度")
-
-    chart_data = pd.DataFrame()
-    for ai_name in AI_PROFILES.keys():
-        curve = get_score_curve(ai_name, selected_season)
-        if len(curve) > 0:
-            curve = curve.reset_index(drop=True)
-            curve['idx'] = curve.index  # 用累计序号做x轴，避免日期重复
-            curve = curve.set_index('idx')[['score_after']].rename(columns={'score_after': ai_name})
-            chart_data = pd.concat([chart_data, curve], axis=1)
-
-    if len(chart_data) > 0:
-        # 对数转换后展示（加1防止log(0)）
-        log_data = np.log10(chart_data.clip(lower=1))
-        log_data.columns = [f"{c} (log₁₀)" for c in log_data.columns]
-        st.line_chart(log_data, height=350)
-        st.caption("纵坐标为积分的10为底对数值，数值差异被压缩，主要看趋势和相对位置")
-    else:
-        st.info("暂无走势数据")
-
-# ========== 详细数据对比 ==========
-with st.expander("📋 赛季详细数据表", expanded=False):
-    if len(summary_df) > 0:
-        display_df = summary_df.copy()
-        display_df['增长倍数'] = display_df['roi'].apply(format_growth_multiplier)
-        display_df = display_df.rename(columns={
-            'ai_name': 'AI',
-            'total_bets': '出手数',
-            'win_rate': '胜率',
-            'max_drawdown': '最大回撤',
-            'is_bankrupt': '深度回撤'
-        })
-        display_df['胜率'] = display_df['胜率'].apply(lambda x: f"{x:.2%}")
-        display_df['最大回撤'] = display_df['最大回撤'].apply(lambda x: f"{x:.2%}")
-        display_df['深度回撤'] = display_df['深度回撤'].apply(lambda x: "是" if x else "否")
-        st.dataframe(
-            display_df[['AI', '增长倍数', '胜率', '出手数', '最大回撤', '深度回撤']], 
-            use_container_width=True, hide_index=True
-        )
+            
+            st.caption(f"📊 参数：{profile['params']}")
+            st.caption("🚧 数据准备中，敬请期待")
 
 # ========== AI共识分析 ==========
 st.markdown("## 🤝 共识分析")
@@ -361,41 +433,49 @@ else:
     st.info("暂无共识数据")
 
 # ========== 决策参考 ==========
-st.markdown("## 💡 决策参考（可复用规律）")
+st.markdown("## 💡 决策参考")
 
 col1, col2 = st.columns(2)
 
 with col1:
-    st.markdown("### ✅ 放心出击场景")
+    st.markdown("### ✅ 相对可靠场景")
     st.markdown("""
-    - **置信度 > 80%** 的单注：实际胜率 82-95%
-    - **强弱分明**（赔率差 > 3倍）：准确率 68-78%
-    - **某队近期状态碾压**（近5场净胜球差很多）：准确率 90%+
-    - **模型预测主胜**：78% 准确率，最可靠方向
-    - **三个AI共识**：多重验证，可靠性更高
+    - **三AI共识**：多重验证，可靠性更高
+    - **高安全边际**：20%以上价值优势，亏得少
+    - **强弱分明**：实力差距大的比赛，预测更准
+    - **模型预测主胜**：主胜预测最可靠
+    - **出手质量 > 数量**：宁可少出手，也要选最有把握的
     """)
 
 with col2:
     st.markdown("### ⚠️ 谨慎出手场景")
     st.markdown("""
-    - **模型预测平局**：只有 43% 准确率，直接忽略
-    - **两队状态相当**：准确率仅 53%，接近抛硬币
-    - **赔率差 1.2-1.5 倍**（略分区间）：准确率最低
-    - **高赔率 > 3** 的比赛：即便是精选也只有 70% 左右
-    - **任何比赛都要防平局**：80% 的高置信翻车都是平局
+    - **模型预测平局**：平局最难预测，谨慎对待
+    - **两队状态相当**：接近抛硬币，50%左右
+    - **低安全边际**：价值不足，容易亏
+    - **高赔率 > 3** 的比赛：冷门难预测
+    - **任何比赛都要防平局**：很多翻车都是平局
     """)
 
-with st.expander("📊 置信度 vs 实际准确率（OOS真实数据）", expanded=False):
+with st.expander("📊 置信度 vs 实际准确率（全量版参考·偏乐观）", expanded=False):
     st.caption("模型输出置信度与真实胜率的对应关系，出手决策的核心参考")
+    st.warning("""
+    ⚠️ **重要提醒：以下为全量训练模型的参考数据，存在未来函数，偏乐观！**
+    
+    - 全量训练模型已经见过所有比赛数据，相当于开了上帝视角
+    - 真实WF（无未来函数）下的准确率会低很多，约53-55%
+    - 仅供方向参考，具体数值请以WF版验证为准
+    """)
     conf_acc_df = pd.DataFrame([
-        {"置信度区间": "< 40%", "场次占比": "6.2%", "实际准确率": "35.5%", "策略建议": "避免出手"},
-        {"置信度区间": "40-50%", "场次占比": "20.6%", "实际准确率": "42.5%", "策略建议": "谨慎观察"},
-        {"置信度区间": "50-60%", "场次占比": "17.6%", "实际准确率": "51.1%", "策略建议": "轻仓试探"},
-        {"置信度区间": "60-70%", "场次占比": "14.1%", "实际准确率": "61.5%", "策略建议": "正常出手"},
-        {"置信度区间": "70-80%", "场次占比": "12.9%", "实际准确率": "72.3%", "策略建议": "重点关注"},
-        {"置信度区间": "≥ 80%", "场次占比": "28.6%", "实际准确率": "89.1%", "策略建议": "重仓出击"},
+        {"置信度区间": "< 40%", "场次占比": "6.2%", "全量版准确率": "35.5%", "WF版参考": "~32%", "策略建议": "避免出手"},
+        {"置信度区间": "40-50%", "场次占比": "20.6%", "全量版准确率": "42.5%", "WF版参考": "~40%", "策略建议": "谨慎观察"},
+        {"置信度区间": "50-60%", "场次占比": "17.6%", "全量版准确率": "51.1%", "WF版参考": "~48%", "策略建议": "轻仓试探"},
+        {"置信度区间": "60-70%", "场次占比": "14.1%", "全量版准确率": "61.5%", "WF版参考": "~55%", "策略建议": "正常出手"},
+        {"置信度区间": "70-80%", "场次占比": "12.9%", "全量版准确率": "72.3%", "WF版参考": "~62%", "策略建议": "重点关注"},
+        {"置信度区间": "≥ 80%", "场次占比": "28.6%", "全量版准确率": "89.1%", "WF版参考": "~70%", "策略建议": "重仓出击"},
     ])
     st.dataframe(conf_acc_df, hide_index=True, use_container_width=True)
+    st.caption("💡 WF版数据为估算值，精确值待WF验证完成后更新")
 
 # ========== 最近出手记录 ==========
 with st.expander("📝 最近出手记录（含筛选）", expanded=False):
@@ -449,7 +529,7 @@ with st.expander("📝 最近出手记录（含筛选）", expanded=False):
             df = df[df['value_diff'] <= 0]
         return df
 
-    tab1, tab2, tab3, tab4 = st.tabs(["全部", "🔥 激进AI", "⚖️ 中立AI", "🛡️ 保守AI"])
+    tab1, tab2, tab3, tab4 = st.tabs(["全部", "🦅 猎鹰#S03", "⚖️ 天秤#S02", "🪨 磐石#S01"])
 
     with tab1:
         log_df = get_betting_log(season_year=selected_season, limit=200)
@@ -457,7 +537,11 @@ with st.expander("📝 最近出手记录（含筛选）", expanded=False):
             df = enrich_bet_df(log_df)
             df = apply_filters(df)
             if len(df) > 0:
-                show = df[['match_date', 'ai_name', 'home_team', 'away_team', 'pred_short', 
+                # 映射AI展示名
+                df['AI'] = df['ai_name'].apply(
+                    lambda x: f"{AI_PROFILES.get(x, {}).get('icon', '🤖')} {AI_PROFILES.get(x, {}).get('display_name', x)}"
+                )
+                show = df[['match_date', 'AI', 'home_team', 'away_team', 'pred_short', 
                            'confidence_pct', 'odds', '验证权重', '共识', '价值', 'actual_short', 'win_label']]
                 show.columns = ['日期', 'AI', '主队', '客队', '预测', '置信度', '市场概率', '验证权重', '共识', '置信度优势', '赛果', '结果']
                 st.dataframe(show, use_container_width=True, hide_index=True)
@@ -480,15 +564,15 @@ with st.expander("📝 最近出手记录（含筛选）", expanded=False):
                 else:
                     st.info("当前筛选条件下无记录")
 
-    # ========== 置信度分布统计 ==========
+    # ========== 赔率分布统计 ==========
     st.markdown("---")
-    st.markdown("###### 📊 置信度分布统计")
+    st.markdown("###### 📊 赔率分布统计")
     log_all = get_betting_log(season_year=selected_season, limit=1000)
     if len(log_all) > 0:
         df_all = enrich_bet_df(log_all)
         df_all = apply_filters(df_all)
         if len(df_all) > 0:
-            # 置信度分桶
+            # 赔率分桶
             bins = [0, 1.5, 2.0, 2.5, 3.0, 4.0, 99]
             labels = ["<1.5", "1.5-2.0", "2.0-2.5", "2.5-3.0", "3.0-4.0", "4.0+"]
             df_all['odds_bin'] = pd.cut(df_all['odds'], bins=bins, labels=labels)
@@ -497,7 +581,7 @@ with st.expander("📝 最近出手记录（含筛选）", expanded=False):
                 胜率=('win', 'mean')
             ).reset_index()
             dist['胜率'] = dist['胜率'].apply(lambda x: f"{x:.1%}")
-            dist.columns = ['置信度区间', '出手数', '准确率']
+            dist.columns = ['赔率区间', '出手数', '胜率']
             dcol1, dcol2 = st.columns([2, 1])
             dcol1.dataframe(dist, use_container_width=True, hide_index=True)
             dcol2.metric("平均赔率", f"{df_all['odds'].mean():.2f}")
@@ -505,123 +589,243 @@ with st.expander("📝 最近出手记录（含筛选）", expanded=False):
             st.info("暂无数据")
 
 # ========== 策略动物园（二级参考，折叠收起） ==========
-with st.expander("🦓 策略动物园 · 140组参数回测排行榜（点击展开）"):
-    st.caption("探索不同参数组合的历史表现，属于二级参考指标，不影响核心三AI策略")
-    conn = get_db()
-    zoo_exists = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table' AND name='strategy_zoo'", conn)
-    if len(zoo_exists) > 0:
-        zoo_df = pd.read_sql("SELECT * FROM strategy_zoo ORDER BY sharpe_ratio DESC", conn)
+with st.expander("🦓 策略动物园 · 36组参数回测排行榜（点击展开）"):
+    st.caption("探索不同参数组合的历史表现，属于二级参考指标，不影响核心4个AI策略")
     
-        # 筛选器
-        col_f1, col_f2, col_f3 = st.columns(3)
-        with col_f1:
-            sort_by = st.selectbox("排序方式", ["夏普比率", "胜率", "最大回撤", "出手数"], key="zoo_sort")
-        with col_f2:
-            min_win = st.slider("最低胜率", 0.4, 0.9, 0.5, 0.05, key="zoo_win")
-        with col_f3:
-            max_dd = st.slider("最大回撤上限", 0.3, 1.0, 0.8, 0.05, key="zoo_dd")
+    tab_wf, tab_full = st.tabs(["⭐⭐⭐⭐⭐ WF赛季重置版（金标准）", "⭐ 全量基准版（偏乐观·参考）"])
     
-        # 应用筛选
-        zoo_filt = zoo_df[zoo_df['win_rate'] >= min_win].copy()
-        zoo_filt = zoo_filt[zoo_filt['avg_max_drawdown'] <= max_dd].copy()
-    
-        sort_map = {"夏普比率": "sharpe_ratio", "胜率": "win_rate", "最大回撤": "avg_max_drawdown", "出手数": "avg_bets_per_season"}
-        ascending = sort_by == "最大回撤"
-        zoo_filt = zoo_filt.sort_values(sort_map[sort_by], ascending=ascending)
-    
-        # 格式化展示
-        zoo_show = zoo_filt.head(30).copy()
-        zoo_show['排名'] = zoo_show['rank'] + 1
-        zoo_show['置信度'] = zoo_show['min_confidence'].apply(lambda x: f"≥{x:.0%}")
-        zoo_show['凯利系数'] = zoo_show['kelly_fraction'].apply(lambda x: f"{x:.1f}")
-        zoo_show['安全边际'] = zoo_show['value_margin'].apply(lambda x: f"{(x-1)*100:.0f}%" if x > 1 else "无")
-        zoo_show['胜率'] = zoo_show['win_rate'].apply(lambda x: f"{x:.1%}")
-        zoo_show['平均置信度'] = zoo_show['avg_odds'].apply(lambda x: f"{x:.2f}")
-        zoo_show['最大回撤'] = zoo_show['avg_max_drawdown'].apply(lambda x: f"{x:.1%}")
-        zoo_show['出手/赛季'] = zoo_show['avg_bets_per_season'].astype(int)
-        zoo_show['夏普'] = zoo_show['sharpe_ratio']
-        zoo_show['卡尔玛'] = zoo_show['kalmar_ratio'].round(1)
-        zoo_show['封顶准确率提升'] = zoo_show['capped_roi'].apply(lambda x: f"{x:.0%}")
-        zoo_show['固定准确率提升'] = zoo_show['fixed_roi'].apply(lambda x: f"{x:.0%}")
-
-        display_cols = ['排名', '置信度', '凯利系数', '安全边际', '出手/赛季', '胜率', '最大回撤', '夏普', '卡尔玛', '封顶准确率提升', '固定准确率提升']
-        st.dataframe(zoo_show[display_cols], use_container_width=True, hide_index=True, height=520)
-    
-        # 核心发现
-        st.markdown("### 🔍 核心发现")
-        col_d1, col_d2, col_d3 = st.columns(3)
-        best_sharpe = zoo_df.iloc[0]
-        best_win = zoo_df.loc[zoo_df['win_rate'].idxmax()]
-        best_dd = zoo_df.loc[zoo_df['avg_max_drawdown'].idxmin()]
-    
-        with col_d1:
-            st.metric("最高夏普", f"{best_sharpe['sharpe_ratio']:.2f}", 
-                      f"≥{best_sharpe['min_confidence']:.0%}置信 + {(best_sharpe['value_margin']-1)*100:.0f}%边际")
-        with col_d2:
-            st.metric("最高胜率", f"{best_win['win_rate']:.1%}", 
-                      f"≥{best_win['min_confidence']:.0%}置信 + {(best_win['value_margin']-1)*100:.0f}%边际")
-        with col_d3:
-            st.metric("最小回撤", f"{best_dd['avg_max_drawdown']:.1%}", 
-                      f"凯利{best_dd['kelly_fraction']:.1f} + {(best_dd['value_margin']-1)*100:.0f}%边际")
-    
-        st.info("""
-        **规律总结：**
-        1. **置信度是第一生产力**：TOP策略清一色≥65%高置信，胜率80%+
-        2. **价值边际锦上添花**：20%~30%安全边际能有效提升风险调整收益
-        3. **凯利系数只影响波动**：同样置信+边际下，凯利大小不改变夏普，只放大回撤和收益
-        4. **140个策略全部存活**：20%单注上限是有效的回撤保护
+    with tab_wf:
+        st.success("""
+        ✅ **金标准：Walk Forward 赛季重置版**
+        - 滚动训练，无未来函数，最接近真实情况
+        - 每赛季初始积分5000，赛季结束重置
+        - 12个测试赛季（2014-2026）
         """)
-    else:
-        st.info("策略动物园数据未生成，运行 `strategy_zoo_backtest.py` 生成排行榜")
-    conn.close()
+        conn = get_db()
+        wf_df = pd.read_sql("SELECT * FROM strategy_zoo_wf_a_36 ORDER BY sharpe_ratio DESC", conn)
+        
+        if len(wf_df) > 0:
+            # 筛选器
+            col_f1, col_f2, col_f3 = st.columns(3)
+            with col_f1:
+                sort_by_wf = st.selectbox("排序方式", ["夏普比率", "胜率", "最大回撤", "出手数", "ROI"], key="zoo_sort_wf")
+            with col_f2:
+                min_win_wf = st.slider("最低胜率", 0.4, 0.7, 0.5, 0.05, key="zoo_win_wf")
+            with col_f3:
+                max_dd_wf = st.slider("最大回撤上限", 0.3, 1.0, 0.8, 0.05, key="zoo_dd_wf")
+            
+            # 应用筛选
+            wf_filt = wf_df[wf_df['win_rate'] >= min_win_wf].copy()
+            wf_filt = wf_filt[wf_filt['avg_max_drawdown'] <= max_dd_wf].copy()
+            
+            sort_map_wf = {
+                "夏普比率": "sharpe_ratio", 
+                "胜率": "win_rate", 
+                "最大回撤": "avg_max_drawdown", 
+                "出手数": "avg_bets_per_season",
+                "ROI": "avg_roi"
+            }
+            ascending = sort_by_wf == "最大回撤"
+            wf_filt = wf_filt.sort_values(sort_map_wf[sort_by_wf], ascending=ascending)
+            
+            # 核心发现
+            st.markdown("### 🔍 WF版核心发现")
+            col_d1, col_d2, col_d3 = st.columns(3)
+            best_sharpe_wf = wf_df.iloc[0]
+            best_win_wf = wf_df.loc[wf_df['win_rate'].idxmax()]
+            best_dd_wf = wf_df.loc[wf_df['avg_max_drawdown'].idxmin()]
+            
+            with col_d1:
+                st.metric("最高夏普", f"{best_sharpe_wf['sharpe_ratio']:.2f}", 
+                          f"≥{best_sharpe_wf['min_confidence']:.0%}置信 + {(best_sharpe_wf['value_margin']-1)*100:.0f}%边际")
+            with col_d2:
+                st.metric("最高胜率", f"{best_win_wf['win_rate']:.1%}", 
+                          f"≥{best_win_wf['min_confidence']:.0%}置信 + {(best_win_wf['value_margin']-1)*100:.0f}%边际")
+            with col_d3:
+                st.metric("最小回撤", f"{best_dd_wf['avg_max_drawdown']:.1%}", 
+                          f"凯利{best_dd_wf['kelly_fraction']:.1f} + {(best_dd_wf['value_margin']-1)*100:.0f}%边际")
+            
+            st.info("""
+            **规律总结（WF金标准）：**
+            1. **模型alpha有限**：最好的策略夏普也只有0.09，接近随机水平
+            2. **安全边际非常重要**：20%安全边际的策略亏得最少，甚至勉强打平
+            3. **质量 > 数量**：出手越少，亏得越少；宁可少出手，也要选最有把握的
+            4. **36个策略全部存活**：没有破产的，但大部分是亏损的
+            5. **凯利只影响波动**：同样条件下，凯利大小不影响夏普，只放大收益和回撤
+            """)
+            
+            st.markdown("---")
+            
+            # 格式化展示
+            wf_show = wf_filt.head(36).copy()
+            wf_show['排名'] = wf_show['rank'] + 1
+            wf_show['置信度'] = wf_show['min_confidence'].apply(lambda x: f"≥{x:.0%}")
+            wf_show['凯利系数'] = wf_show['kelly_fraction'].apply(lambda x: f"{x:.1f}")
+            wf_show['安全边际'] = wf_show['value_margin'].apply(lambda x: f"{(x-1)*100:.0f}%" if x > 1 else "无")
+            wf_show['胜率'] = wf_show['win_rate'].apply(lambda x: f"{x:.1%}")
+            wf_show['平均赔率'] = wf_show['avg_odds'].apply(lambda x: f"{x:.2f}")
+            wf_show['最大回撤'] = wf_show['avg_max_drawdown'].apply(lambda x: f"{x:.1%}")
+            wf_show['出手/赛季'] = wf_show['avg_bets_per_season'].astype(int)
+            wf_show['赛季ROI'] = wf_show['avg_roi'].apply(lambda x: f"{x:+.1%}")
+            wf_show['夏普'] = wf_show['sharpe_ratio'].round(2)
+            
+            display_cols = ['排名', '置信度', '凯利系数', '安全边际', '出手/赛季', '胜率', '平均赔率', '最大回撤', '赛季ROI', '夏普']
+            st.dataframe(wf_show[display_cols], use_container_width=True, hide_index=True, height=520)
+        else:
+            st.info("WF版策略动物园数据未生成")
+        conn.close()
+    
+    with tab_full:
+        st.warning("""
+        ⚠️ **注意：全量基准版存在未来函数，严重偏乐观！**
+        - 全量数据训练，全量数据测试，相当于开了上帝视角
+        - 结果虚高，仅供快速筛选和方向探索参考
+        - **绝对不能作为最终结论**，一切以WF版为准
+        """)
+        conn = get_db()
+        full_df = pd.read_sql("SELECT * FROM strategy_zoo_full_a_36 ORDER BY sharpe_ratio DESC", conn)
+        
+        if len(full_df) > 0:
+            # 格式化展示
+            full_show = full_df.head(36).copy()
+            full_show['排名'] = full_show['rank'] + 1
+            full_show['置信度'] = full_show['min_confidence'].apply(lambda x: f"≥{x:.0%}")
+            full_show['凯利系数'] = full_show['kelly_fraction'].apply(lambda x: f"{x:.1f}")
+            full_show['安全边际'] = full_show['value_margin'].apply(lambda x: f"{(x-1)*100:.0f}%" if x > 1 else "无")
+            full_show['胜率'] = full_show['win_rate'].apply(lambda x: f"{x:.1%}")
+            full_show['平均赔率'] = full_show['avg_odds'].apply(lambda x: f"{x:.2f}")
+            full_show['最大回撤'] = full_show['avg_max_drawdown'].apply(lambda x: f"{x:.1%}")
+            full_show['出手/赛季'] = full_show['avg_bets_per_season'].astype(int)
+            full_show['赛季ROI'] = full_show['avg_roi'].apply(lambda x: f"{x:+.1%}")
+            full_show['夏普'] = full_show['sharpe_ratio'].round(2)
+            
+            display_cols = ['排名', '置信度', '凯利系数', '安全边际', '出手/赛季', '胜率', '平均赔率', '最大回撤', '赛季ROI', '夏普']
+            st.dataframe(full_show[display_cols], use_container_width=True, hide_index=True, height=520)
+            
+            st.info("💡 对比WF版可以看到：全量版夏普最高3.00，WF版只有0.09，差了33倍——这就是未来函数的威力！")
+        else:
+            st.info("全量版策略动物园数据未生成")
+        conn.close()
 
 # ========== 策略说明 ==========
 with st.expander("📖 策略规则说明"):
     st.markdown("""
     ### 基础规则
-    - 每个赛季初始积分：1000
+    - 每个赛季初始积分：5000
     - 赛季结束重置，不滚存
-    - 每周至少出手1场（无符合条件时强制选置信度最高的）
-    - 允许深度回撤，连续10场准确率低于阈值后本赛季暂停验证
+    - 每周至少出手2场（无符合条件时强制选置信度最高的）
+    - 单注上限：5%（防止一把梭哈）
     
-    ### 三AI策略参数（严格OOS验证最优）
+    ### 三AI策略参数（WF金标准验证）
     | AI | 风格定位 | 置信度门槛 | 凯利系数 | 价值安全边际 |
     |----|---------|-----------|---------|-------------|
-    | 🔥 激进AI | 高频价值型 | ≥50% | 0.90 | 20% |
-    | ⚖️ 中立AI | 均衡精选型 | ≥65% | 0.60 | 20% |
-    | 🛡️ 保守AI | 极致稳型 | ≥70% | 0.20 | 30% |
+    | 🔥 激进AI | 高频价值型 | ≥55% | 0.90 | 20% |
+    | ⚖️ 中立AI | 均衡精选型 | ≥55% | 0.60 | 20% |
+    | 🛡️ 保守AI | 极致稳型 | ≥55% | 0.20 | 20% |
+    
+    ### 三级验证体系
+    ⭐ **Level 1：全量回测**（最低可信度）
+    - 全量数据训练，全量数据测试
+    - 用途：快速筛选、方向探索
+    - 严重偏乐观，仅供参考
+    
+    ⭐⭐⭐ **Level 2：赛季重置**（中等可信度）
+    - 全量数据训练，按赛季重置资金
+    - 用途：策略稳定性初步评估
+    - 仍有未来函数
+    
+    ⭐⭐⭐⭐⭐ **Level 3：WF赛季重置**（最高可信度·金标准）
+    - 滚动训练，无未来函数，赛季重置资金
+    - 用途：最终结论、策略上线评估
+    - 所有策略上线前必须通过此验证
     
     ### 关于积分数字
-    凯利公式 + 26% Alpha优势 + 高频出手的复利效应，会导致积分呈指数级增长，赛季末数字非常大。
-    这是理论验证的数学结果，现实中会因数据偏差、样本变动、权重上限等因素产生差异。
+    足球预测很难，模型alpha有限，真实环境下很难稳定盈利。
     **相对排名和策略特性才是有价值的参考**。
     
     ### 风格定位说明
-    三个AI是**按风格多样性**选入看板的，不是按好坏排名。保守AI夏普最优，但不代表激进AI"差"——只是风险偏好不同，适合不同决策场景。
+    三个AI是**按风险偏好**区分的，不是按好坏排名。保守AI仓位最轻，但不代表激进AI"差"——只是风险偏好不同，适合不同决策场景。
     
     ### 数据来源
     - 赔率：B365终盘
-    - 模型：Walk-Forward滚动验证（纯OOS数据，15赛季2.7万场）
-    - 参数优化：策略动物园网格搜索 + 综合评分（夏普60%+收益30%+胜率10%）
+    - 模型：Walk-Forward滚动验证（纯OOS数据，12赛季2万+场）
+    - 参数优化：策略动物园网格搜索 + WF版验证
     
-    ### 🎯 核心测试结论（140策略×多维度验证）
+    ### 🎯 核心结论（WF版验证）
     
-    **1. 没有全能最优策略，只有目标最优**
-    - 求稳（夏普/卡尔玛最高）→ 高置信保守型（≥70%+K0.2+30%边际）
-    - 求赚（绝对收益最高）→ 低置信激进型（≥50%+K1.0+20%边际）
-    - 两者排名强负相关（-0.76），TOP10零重合，鱼和熊掌不可兼得
+    **1. 模型alpha有限，符合市场规律**
+    - 最好的策略赛季ROI也只有+1.2%，几乎不赚
+    - 夏普只有0.09，接近随机水平
+    - 这才是真实的足球预测，没有圣杯
     
-    **2. 实战可靠性验证**
-    - 偏差测试：数据打9折后准确率提升幅度衰减~25%，全部策略仍有正收益，模型稳定性有保障
-    - 蒙特卡洛：50次随机重排零深撤，回撤波动仅5%~9%，20%单注上限安全垫扎实
-    - 最长连亏P95：保守型6场 / 中立型7场 / 激进型9-10场，心态可承受
+    **2. 安全边际非常重要**
+    - 20%安全边际：勉强打平
+    - 10%安全边际：亏20-30%
+    - 无安全边际：亏30-60%
+    - 价值筛选确实有效，能大幅减少亏损
     
-    **3. 时间稳定性**
-    - 近5赛季 vs 全15赛季，策略排名相关系数0.995，TOP10完全重合
-    - 模型Alpha稳定，不存在"过时"问题
+    **3. 质量远大于数量**
+    - 出手越少，亏得越少
+    - 宁可少出手，也要选最有把握的
+    - 高置信度不一定好，太低也不行
     
-    **4. 联赛差异**
-    - 意甲门槛最高（风险最优需≥65%置信，平局多易翻车）
-    - 德甲/英超门槛最低（≥55%即可，强弱分明）
-    - 收益最优策略全联赛一致（激进型排第一）
+    **4. 没有圣杯，持续优化**
+    - 模型是有效的，但很有限
+    - 还有很大提升空间
+    - 继续优化特征和策略
     """)
+
+# ========== 积分与增长倍数（数据记录，仅供参考） ==========
+with st.expander("📊 积分走势与增长倍数（数据记录·仅供参考）", expanded=False):
+    st.warning("""
+    ⚠️ **重要提示：以下数据基于全量训练模型，存在未来函数，仅供研究记录使用**
+    
+    - 全量训练模型已经见过所有比赛数据，相当于开了上帝视角
+    - 凯利公式 + 高频出手的复利效应会导致积分呈指数级增长，数字虚高
+    - 真实 Walk Forward（无未来函数）下的增长倍数仅为数千倍，远低于此
+    - **核心参考指标：胜率、回撤、夏普，增长倍数仅作数据记录**
+    """)
+    
+    # 积分走势图
+    st.markdown("### 📈 积分走势（对数刻度）")
+    st.caption("单赛季内积分变化（每个赛季独立重置500），复利效应导致数字虚高，主要看相对节奏和回撤深度")
+
+    chart_data = pd.DataFrame()
+    for ai_name, profile in AI_PROFILES.items():
+        if profile.get('placeholder'):
+            continue
+        curve = get_score_curve(ai_name, selected_season)
+        if len(curve) > 0:
+            curve = curve.reset_index(drop=True)
+            curve['idx'] = curve.index  # 用累计序号做x轴，避免日期重复
+            display_name = f"{profile['icon']} {profile['display_name']}"
+            curve = curve.set_index('idx')[['score_after']].rename(columns={'score_after': display_name})
+            chart_data = pd.concat([chart_data, curve], axis=1)
+
+    if len(chart_data) > 0:
+        # 对数转换后展示（加1防止log(0)）
+        log_data = np.log10(chart_data.clip(lower=1))
+        st.line_chart(log_data, height=350)
+        st.caption("纵坐标为积分的10为底对数值，数值差异被压缩，主要看趋势和相对位置")
+    else:
+        st.info("暂无走势数据")
+    
+    st.markdown("---")
+    
+    # 详细数据表
+    st.markdown("### 📋 赛季详细数据")
+    if len(summary_df) > 0:
+        display_df = summary_df.copy()
+        # 映射AI展示名
+        display_df['AI'] = display_df['ai_name'].apply(
+            lambda x: f"{AI_PROFILES.get(x, {}).get('icon', '🤖')} {AI_PROFILES.get(x, {}).get('display_name', x)}"
+        )
+        display_df['增长倍数'] = display_df['roi'].apply(format_growth_multiplier)
+        display_df['胜率'] = display_df['win_rate'].apply(lambda x: f"{x:.2%}")
+        display_df['最大回撤'] = display_df['max_drawdown'].apply(lambda x: f"{x:.2%}")
+        display_df['深度回撤'] = display_df['is_bankrupt'].apply(lambda x: "是" if x else "否")
+        st.dataframe(
+            display_df[['AI', '增长倍数', '胜率', 'total_bets', '最大回撤', '深度回撤']].rename(columns={'total_bets': '出手数'}), 
+            use_container_width=True, hide_index=True
+        )
+        st.caption("增长倍数为全量训练模型的理论计算值，存在未来函数，仅供参考")

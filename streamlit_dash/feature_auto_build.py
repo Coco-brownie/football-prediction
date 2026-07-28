@@ -3,14 +3,13 @@ import numpy as np
 import sqlite3
 import os
 
-# 完整45维特征（34基础 + 3 ELO直接 + 8 ELO扩展），与 match_predict.py 全局统一
+# 完整52维特征（去掉shot_on_diff泄露特征），与 match_predict.py 全局统一
 FEATURE_COLS = [
     "h5_gf","h5_ga","h5_shot","h5_shot_ot",
     "h10_gf","h10_ga",
     "a5_gf","a5_ga","a5_shot","a5_shot_ot",
     "a10_gf","a10_ga",
     "odds_draw_real","odds_lose_real",
-    "shot_on_diff",
     "h2h_cnt", "h2h_home_win_rate", "h2h_draw_rate", "h2h_home_gf_avg", "h2h_home_ga_avg",
     "prob_ratio_ha", "prob_draw_share", "prob_max", "prob_entropy", "prob_home_favorite",
     "home_draw_rate_5", "home_draw_rate_10", "away_draw_rate_5", "away_draw_rate_10",
@@ -231,10 +230,10 @@ def calc_h2h_stats(df_filter, home_team, away_team):
         round(home_ga_total / cnt, 4)
     )
 
-def build_feature_by_teams(df_full, home_team, away_team, draw_odds, away_odds, shot_diff, league_code,
+def build_feature_by_teams(df_full, home_team, away_team, draw_odds, away_odds, league_code,
                            use_value_features=False, league_cfg_code=None):
     """
-    构建完整34维特征（开启身价特征后为39维）
+    构建完整52维特征（去掉shot_on_diff泄露特征）
     league_code: 数据库联赛编码（SER/E0/D1/LIG/LLA）
     use_value_features: 是否追加身价特征（默认关闭，需补充team_value_data.json后开启）
     league_cfg_code: 联赛配置编码（EPL/LLA/BUN/SER/LIG），身价特征需要
@@ -247,7 +246,7 @@ def build_feature_by_teams(df_full, home_team, away_team, draw_odds, away_odds, 
     # 计算历史交锋特征
     h2h_cnt, h2h_win_rate, h2h_draw_rate, h2h_gf_avg, h2h_ga_avg = calc_h2h_stats(df_full, home_team, away_team)
 
-    # 前25维基础特征（15基础 + 5交锋 + 5赔率衍生）
+    # 前24维基础特征（12基础 + 5交锋 + 5赔率衍生 + 2赔率）
 
     # 计算赔率衍生特征（基于去水后的概率）
     p_home = 1.0 - draw_odds - away_odds
@@ -287,7 +286,6 @@ def build_feature_by_teams(df_full, home_team, away_team, draw_odds, away_odds, 
         a5_gf, a5_ga, a5_shot, a5_shot_ot,
         a10_gf, a10_ga,
         draw_odds, away_odds,
-        shot_diff,
         h2h_cnt, h2h_win_rate, h2h_draw_rate, h2h_gf_avg, h2h_ga_avg,
         prob_ratio_ha, prob_draw_share, prob_max, prob_entropy, prob_home_favorite,
         home_draw_5, home_draw_10, away_draw_5, away_draw_10

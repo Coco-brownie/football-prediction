@@ -11,14 +11,13 @@ ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(ROOT_PATH, "model")
 
 
-# 【2026-07-27 ELO扩展版V2：34维基础 + 3维ELO直接 + 8维ELO扩展 = 45维】
+# 【2026-07-29 特征泄露修复版：去掉shot_on_diff，52维】
 FEATURE_COLS = [
     "h5_gf","h5_ga","h5_shot","h5_shot_ot",
     "h10_gf","h10_ga",
     "a5_gf","a5_ga","a5_shot","a5_shot_ot",
     "a10_gf","a10_ga",
     "odds_draw_real","odds_lose_real",
-    "shot_on_diff",
     "h2h_cnt", "h2h_home_win_rate", "h2h_draw_rate", "h2h_home_gf_avg", "h2h_home_ga_avg",
     "prob_ratio_ha", "prob_draw_share", "prob_max", "prob_entropy", "prob_home_favorite",
     "home_draw_rate_5", "home_draw_rate_10", "away_draw_rate_5", "away_draw_rate_10",
@@ -30,30 +29,28 @@ FEATURE_COLS = [
     "away_w5_elo_trend", "away_w10_elo_trend",
 ]
 
-# 泊松模型特征（14维）
+# 泊松模型特征（13维，去掉shot_on_diff）
 POISSON_FEATURES = [
     "h5_gf", "h5_ga", "a5_gf", "a5_ga",
     "h10_gf", "h10_ga", "a10_gf", "a10_ga",
-    "league_SER", "league_E0", "league_D1", "league_LIG", "league_LLA",
-    "shot_on_diff"
+    "league_SER", "league_E0", "league_D1", "league_LIG", "league_LLA"
 ]
 # 硬编码索引（与训练时GOAL_FEATURES严格对齐），避免FEATURE_COLS变化导致错位
-# 顺序：h5_gf, h5_ga, a5_gf, a5_ga, h10_gf, h10_ga, a10_gf, a10_ga, league_*5, shot_on_diff
-POISSON_FEAT_IDX = [0, 1, 6, 7, 4, 5, 10, 11, 29, 30, 31, 32, 33, 14]
+# 顺序：h5_gf, h5_ga, a5_gf, a5_ga, h10_gf, h10_ga, a10_gf, a10_ga, league_*5
+POISSON_FEAT_IDX = [0, 1, 6, 7, 4, 5, 10, 11, 28, 29, 30, 31, 32]
 
 # 融合权重：LGB 55% + 泊松 30% + 平局专项 5%（网格搜索OOS最优保守方案）
 FUSION_WEIGHT_LGB = 0.55
 FUSION_WEIGHT_POISSON = 0.30
 FUSION_WEIGHT_DRAW = 0.05
 
-# 【2026-07-27 ELO扩展版V2：联赛独立模型 29 + 3 + 8 = 40维】
+# 【2026-07-29 特征泄露修复版：去掉shot_on_diff，联赛独立模型47维】
 LEAGUE_FEATURE_COLS = [
     "h5_gf","h5_ga","h5_shot","h5_shot_ot",
     "h10_gf","h10_ga",
     "a5_gf","a5_ga","a5_shot","a5_shot_ot",
     "a10_gf","a10_ga",
     "odds_draw_real","odds_lose_real",
-    "shot_on_diff",
     "h2h_cnt", "h2h_home_win_rate", "h2h_draw_rate", "h2h_home_gf_avg", "h2h_home_ga_avg",
     "prob_ratio_ha", "prob_draw_share", "prob_max", "prob_entropy", "prob_home_favorite",
     "home_draw_rate_5", "home_draw_rate_10", "away_draw_rate_5", "away_draw_rate_10",
@@ -265,18 +262,22 @@ def predict_match(feature_array, is_home_scene: bool = True):
     return result
 
 if __name__ == "__main__":
-    # 34维测试样本（英超）
+    # 52维测试样本（英超）
     sample_feature = [
         8, 5, 42, 18,      # h5_gf, h5_ga, h5_shot, h5_shot_ot
         16, 11,             # h10_gf, h10_ga
         6, 7, 36, 14,      # a5_gf, a5_ga, a5_shot, a5_shot_ot
         13, 15,             # a10_gf, a10_ga
         0.25, 0.30,        # odds_draw_real, odds_lose_real
-        4,                  # shot_on_diff
         5, 0.55, 0.25, 1.8, 1.2,  # h2h_cnt, win_rate, draw_rate, gf_avg, ga_avg
         1.5, 0.28, 0.48, 0.9, 1,  # prob_ratio_ha, draw_share, prob_max, entropy, home_fav
         0.3, 0.28, 0.25, 0.27,    # 平局率4维
-        0, 1, 0, 0, 0      # 联赛独热：英超E0
+        0, 1, 0, 0, 0,    # 联赛独热：英超E0
+        1600, 1500, 100,  # ELO直接特征
+        1.5, 1.2, 1.3, 1.1,  # ELO扩展特征
+        5, 10, -3, -5,    # ELO趋势特征
+        1.8, 1.5, 1.4, 1.6,  # 时间衰减近5场
+        1.7, 1.4, 1.5, 1.5,  # 时间衰减近10场
     ]
     res = predict_match(sample_feature, is_home_scene=True)
     for k,v in res.items():
@@ -298,7 +299,7 @@ def predict_match_league(feature_array_29, league_cfg_code, is_home_scene: bool 
 
     prob_lgb = h_model.predict_proba(X)[0]
 
-    # 构造泊松模型输入（从29维特征中提取 + 联赛独热）
+    # 构造泊松模型输入（从47维特征中提取 + 联赛独热）
     league_onehot = {
         "EPL": [0, 1, 0, 0, 0],   # league_E0
         "BUN": [0, 0, 1, 0, 0],   # league_D1
@@ -306,10 +307,10 @@ def predict_match_league(feature_array_29, league_cfg_code, is_home_scene: bool 
         "SER": [1, 0, 0, 0, 0],   # league_SER
         "LIG": [0, 0, 0, 1, 0],   # league_LIG
     }
-    feat_29 = feature_array_29
-    # 基础特征索引：h5_gf, h5_ga, a5_gf, a5_ga, h10_gf, h10_ga, a10_gf, a10_ga, shot_on_diff
-    base_idx = [0, 1, 6, 7, 4, 5, 10, 11, 14]
-    poi_base = [feat_29[i] for i in base_idx]
+    feat_47 = feature_array_47
+    # 基础特征索引：h5_gf, h5_ga, a5_gf, a5_ga, h10_gf, h10_ga, a10_gf, a10_ga
+    base_idx = [0, 1, 6, 7, 4, 5, 10, 11]
+    poi_base = [feat_47[i] for i in base_idx]
     poi_feats = poi_base + league_onehot.get(league_cfg_code, [0,0,0,0,0])
 
     h_lam = max(float(poisson_home_model.predict([poi_feats])[0]), 0.3)

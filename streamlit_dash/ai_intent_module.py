@@ -11,11 +11,13 @@ SCRIPT_PATH = os.path.abspath(__file__)
 ROOT_DIR = os.path.dirname(os.path.dirname(SCRIPT_PATH))
 sys.path.insert(0, ROOT_DIR)
 
-# 三AI配置（与回测一致）
+# 三AI配置（与WF回测一致，v1.0.0版本）
+# 注：基于WF赛季重置版验证，只有≥55%+20%安全边际的策略能微赚
+# 三个AI的区别主要是仓位（凯利系数）不同，风险偏好不同
 AI_CONFIGS = {
-    "激进AI": {"min_confidence": 0.50, "kelly_fraction": 0.90, "require_value": True, "value_margin": 1.2, "icon": "🔥"},
-    "中立AI": {"min_confidence": 0.65, "kelly_fraction": 0.60, "require_value": True, "value_margin": 1.2, "icon": "⚖️"},
-    "保守AI": {"min_confidence": 0.70, "kelly_fraction": 0.20, "require_value": True, "value_margin": 1.3, "icon": "🛡️"},
+    "激进AI": {"min_confidence": 0.55, "kelly_fraction": 0.90, "require_value": True, "value_margin": 1.2, "icon": "🔥"},
+    "中立AI": {"min_confidence": 0.55, "kelly_fraction": 0.60, "require_value": True, "value_margin": 1.2, "icon": "⚖️"},
+    "保守AI": {"min_confidence": 0.55, "kelly_fraction": 0.20, "require_value": True, "value_margin": 1.2, "icon": "🛡️"},
 }
 
 

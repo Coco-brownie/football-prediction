@@ -1,5 +1,8 @@
 # ========== 全部排除，再单独包含需要的 ==========
 
+# Git安装目录（误提交，必须忽略）
+/Git/
+
 # 排除所有根目录py文件（除了指定的几个）
 /*.py
 !/match_predict.py
@@ -11,6 +14,7 @@ _full_backup_*/
 exe_package/
 model/_deprecated/
 model_backup_*/
+archive/
 
 # 原始数据
 csv_data/
@@ -42,6 +46,12 @@ config.json
 *.csv
 feature_desc.md
 league_scaler.pkl
+
+# 破产研究中间文件（本地保留，不提交）
+wf_bankrupt_*.md
+wf_bankrupt_study.py
+_check_*.py
+_test_*.py
 
 # 数据库备份
 *_backup_*.db

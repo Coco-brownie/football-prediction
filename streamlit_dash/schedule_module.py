@@ -275,69 +275,70 @@ def render_schedule_calendar(user_name=None):
     # 批量预测按钮
     batch_pred_key = "batch_pred_result"
     if stat_col4.button("🔮 批量预测", type="primary", use_container_width=True):
-        batch_results = []
-        track('predict_batch',
-              action_detail=f'{len(df_filter)}场赛程',
-              page_name='预测中心')
-        for _, row in df_filter.iterrows():
-            if row["status"] == "Played":
-                continue
-            can_pred, reason = can_predict_match(row, df_hist)
-            if not can_pred:
-                continue
+        with st.spinner("🔮 正在预测中，请稍等..."):
+            batch_results = []
+            track('predict_batch',
+                  action_detail=f'{len(df_filter)}场赛程',
+                  page_name='预测中心')
+            for _, row in df_filter.iterrows():
+                if row["status"] == "Played":
+                    continue
+                can_pred, reason = can_predict_match(row, df_hist)
+                if not can_pred:
+                    continue
 
-            home_name = row["home_team_cn"] if pd.notna(row["home_team_cn"]) else row["home_team"]
-            away_name = row["away_team_cn"] if pd.notna(row["away_team_cn"]) else row["away_team"]
-            # 特征构建用英文标准名（历史数据是英文列）
-            home_std = row["home_team"]
-            away_std = row["away_team"]
+                home_name = row["home_team_cn"] if pd.notna(row["home_team_cn"]) else row["home_team"]
+                away_name = row["away_team_cn"] if pd.notna(row["away_team_cn"]) else row["away_team"]
+                # 特征构建用英文标准名（历史数据是英文列）
+                home_std = row["home_team"]
+                away_std = row["away_team"]
 
-            try:
-                feature = build_pred_feature(df_hist, home_std, away_std, row["league_code"])
-                result = predict_match(feature)
-                batch_results.append({
-                    "比赛日期": str(row["match_date"])[:10],
-                    "联赛": LEAGUE_NAMES.get(row["league_code"], row["league_code"]),
-                    "主队": home_name,
-                    "客队": away_name,
-                    "预测赛果": result["predict_result"],
-                    "置信度": result["confidence"],
-                    "主胜概率": result["prob_home_win"],
-                    "平局概率": result["prob_draw"],
-                    "客胜概率": result["prob_away_win"],
-                })
+                try:
+                    feature = build_pred_feature(df_hist, home_std, away_std, row["league_code"])
+                    result = predict_match(feature)
+                    batch_results.append({
+                        "比赛日期": str(row["match_date"])[:10],
+                        "联赛": LEAGUE_NAMES.get(row["league_code"], row["league_code"]),
+                        "主队": home_name,
+                        "客队": away_name,
+                        "预测赛果": result["predict_result"],
+                        "置信度": result["confidence"],
+                        "主胜概率": result["prob_home_win"],
+                        "平局概率": result["prob_draw"],
+                        "客胜概率": result["prob_away_win"],
+                    })
 
-                # 写入数据库（有昵称才保存）
-                if user_name:
-                    try:
-                        save_prediction_to_db(
-                            match_date=str(row["match_date"])[:10],
-                            home_team=home_name,
-                            away_team=away_name,
-                            league_code=row["league_code"],
-                            prob_home=result["prob_home_win"],
-                            prob_draw=result["prob_draw"],
-                            prob_away=result["prob_away_win"],
-                            predict_result=result["predict_result"],
-                            confidence=result["confidence"],
-                            predict_source="schedule_batch",
-                            user_name=user_name
-                        )
-                    except:
-                        pass
-            except:
-                continue
+                    # 写入数据库（有昵称才保存）
+                    if user_name:
+                        try:
+                            save_prediction_to_db(
+                                match_date=str(row["match_date"])[:10],
+                                home_team=home_name,
+                                away_team=away_name,
+                                league_code=row["league_code"],
+                                prob_home=result["prob_home_win"],
+                                prob_draw=result["prob_draw"],
+                                prob_away=result["prob_away_win"],
+                                predict_result=result["predict_result"],
+                                confidence=result["confidence"],
+                                predict_source="schedule_batch",
+                                user_name=user_name
+                            )
+                        except:
+                            pass
+                except:
+                    continue
 
-        # 结果去重（按日期+主队+客队）
-        seen = set()
-        unique_results = []
-        for r in batch_results:
-            key = (r["比赛日期"], r["主队"], r["客队"])
-            if key not in seen:
-                seen.add(key)
-                unique_results.append(r)
+            # 结果去重（按日期+主队+客队）
+            seen = set()
+            unique_results = []
+            for r in batch_results:
+                key = (r["比赛日期"], r["主队"], r["客队"])
+                if key not in seen:
+                    seen.add(key)
+                    unique_results.append(r)
 
-        st.session_state[batch_pred_key] = unique_results
+            st.session_state[batch_pred_key] = unique_results
 
     # 批量预测结果展示
     if batch_pred_key in st.session_state and len(st.session_state[batch_pred_key]) > 0:
