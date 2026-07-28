@@ -138,42 +138,6 @@ def calc_feature_contributions(feature_array):
     
     return pos_list, neg_list, summary_text
 
-# 泊松进球模型
-import joblib
-POISSON_HOME_MODEL = os.path.join(ROOT_DIR, "model", "poisson_home_goals.pkl")
-POISSON_AWAY_MODEL = os.path.join(ROOT_DIR, "model", "poisson_away_goals.pkl")
-poisson_home_m = joblib.load(POISSON_HOME_MODEL)
-poisson_away_m = joblib.load(POISSON_AWAY_MODEL)
-
-with open(os.path.join(ROOT_DIR, "model", "poisson_features.json"), "r") as f:
-    POISSON_FEATURES = __import__("json").load(f)
-
-
-def calc_score_probs(home_lam, away_lam, max_goals=6):
-    """计算各比分概率（泊松分布）"""
-    import math
-    probs = {}
-    for h in range(max_goals + 1):
-        for a in range(max_goals + 1):
-            p_h = (home_lam ** h) * math.exp(-home_lam) / math.factorial(h)
-            p_a = (away_lam ** a) * math.exp(-away_lam) / math.factorial(a)
-            probs[f"{h}-{a}"] = p_h * p_a
-    return dict(sorted(probs.items(), key=lambda x: x[1], reverse=True))
-
-
-def calc_over_under(home_lam, away_lam, line=2.5):
-    """计算大小球概率"""
-    import math
-    under_prob = 0.0
-    total_goals = int(line) + 1  # 小于line的最大总进球数
-    for h in range(total_goals + 1):
-        for a in range(total_goals + 1):
-            if h + a < line:
-                p_h = (home_lam ** h) * math.exp(-home_lam) / math.factorial(h)
-                p_a = (away_lam ** a) * math.exp(-away_lam) / math.factorial(a)
-                under_prob += p_h * p_a
-    return {"over": 1 - under_prob, "under": under_prob}
-
 # 预测模块独立数据库路径
 DB_PATH = os.path.join(ROOT_DIR, "football.db")
 
