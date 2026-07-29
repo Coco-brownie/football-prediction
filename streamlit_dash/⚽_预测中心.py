@@ -199,8 +199,8 @@ with tab_calendar:
                         # 构建特征（用默认赔率降级）
                         feat = build_feature_by_teams(
                             df_all, home_std, away_std,
-                            odds_draw_real=0.28, odds_lose_real=0.33,
-                            shot_diff=0, league_code=league
+                            0.28, 0.33,
+                            league_code=league
                         )
                         # 预测
                         pred = predict_match(feat, is_home_scene=True)
@@ -208,7 +208,17 @@ with tab_calendar:
                         result = pred["predict_result"]
                         
                         # 计算AI观点
-                        intent = calc_ai_bet_intent(conf, result)
+                        intent = calc_ai_bet_intent(
+                            conf, result, 
+                            league_code=league,
+                            draw_prob=pred.get("prob_draw", 0),
+                            draw_odds=None,  # 暂无真实平局赔率
+                            advanced_mode=False
+                        )
+                        
+                        # 获取显示名称
+                        conservative_name = intent["intents"]["保守AI"].get("display_name", "保守AI")
+                        conservative_icon = intent["intents"]["保守AI"].get("icon", "🛡️")
                         
                         results.append({
                             "比赛日期": row["match_date"].strftime("%m-%d"),
@@ -219,7 +229,7 @@ with tab_calendar:
                             "共识等级": intent["consensus_label"],
                             "激进AI": "✅建议" if intent["intents"]["激进AI"]["will_bet"] else "❌观望",
                             "中立AI": "✅建议" if intent["intents"]["中立AI"]["will_bet"] else "❌观望",
-                            "保守AI": "✅建议" if intent["intents"]["保守AI"]["will_bet"] else "❌观望",
+                            f"{conservative_icon} {conservative_name}": "✅建议" if intent["intents"]["保守AI"]["will_bet"] else "❌观望",
                         })
                     except Exception as e:
                         results.append({
@@ -495,14 +505,8 @@ with tab_track:
             st.dataframe(df_show, use_container_width=True, hide_index=True)
 
 # 底部更新日志（默认折叠，不占空间）
-APP_VERSION = "v1.0.0"
+APP_VERSION = "v1.0.4"
 st.divider()
-
-# 重大提醒
-st.error("""
-🚨 **重大提醒：v1.0.0之前版本存在特征泄露问题，所有模型指标、策略回测结果均严重虚高，请勿参考！**
-v1.0.0为修复后的干净正式版，所有数据均已重新验证。
-""")
 
 # 免责声明
 st.warning("""
@@ -512,7 +516,29 @@ st.warning("""
 
 with st.expander(f"📝 更新日志 · {APP_VERSION} 🆕", expanded=False):
     st.markdown("""
-**v1.0.0 — 2026-07-29（正式版·重大修复）**
+**v1.0.4 — 2026-07-29（高级模式·超级组合）**
+- 👑 新增高级模式，磐石策略升级为超级组合策略
+- 🚀 赛季ROI从+0.9%提升至+22.6%
+- 🐛 修复实时预测特征维度不匹配Bug（补上时间衰减特征）
+
+**v1.0.3 — 2026-07-29（策略深度探索）**
+- 🔍 放开最低出手限制、联赛拆分、德甲专项优化
+- 🤖 三大模型横向对比（LightGBM/XGBoost/CatBoost）
+- ⚖️ 平局联动策略验证有效
+
+**v1.0.2 — 2026-07-29（随机基准·反直觉研究）**
+- 🎲 随机基准对比测试，验证模型真实alpha
+- 🧠 三个反直觉现象深入研究
+- 📊 置信度校准与分桶分析
+
+**v1.0.1 — 2026-07-29（稳健性·概率校准）**
+- 📈 蒙特卡洛稳健性测试（WF版）
+- 🎯 Platt概率校准，预测概率更准确
+- 🏆 五大联赛独立模型验证
+
+---
+
+**v1.0.0 — 2026-07-29（正式版·泄露完全修复）**
 
 🎉 **里程碑：从实验版到正式版的跨越**
 - 两层特征泄露问题完全修复，所有模型全量重建

@@ -65,6 +65,15 @@ FEATURE_CN_MAP = {
     "home_w10_elo_trend": "主队中期状态走势",
     "away_w5_elo_trend": "客队近期状态走势",
     "away_w10_elo_trend": "客队中期状态走势",
+    # 时间衰减特征
+    "h5_gf_time_decay": "主队近5场进攻(时间加权)",
+    "h5_ga_time_decay": "主队近5场防守(时间加权)",
+    "a5_gf_time_decay": "客队近5场进攻(时间加权)",
+    "a5_ga_time_decay": "客队近5场防守(时间加权)",
+    "h10_gf_time_decay": "主队近10场进攻(时间加权)",
+    "h10_ga_time_decay": "主队近10场防守(时间加权)",
+    "a10_gf_time_decay": "客队近10场进攻(时间加权)",
+    "a10_ga_time_decay": "客队近10场防守(时间加权)",
 }
 
 # SHAP解释器（延迟初始化）
@@ -364,7 +373,7 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
             try:
                 input_values = build_feature_by_teams(
                     df_predict_all, pred_home, pred_away,
-                    odds_draw_real, odds_lose_real, shot_diff,
+                    odds_draw_real, odds_lose_real,
                     league_code=curr_league_db
                 )
                 pred_res = predict_match(input_values, is_home_scene=is_home)

@@ -35,7 +35,7 @@ for cfg_code, team_map in LEAGUE_TEAM_MAP.items():
 # AI配置：角色卡风格 + 人设
 AI_PROFILES = {
     "保守AI": {
-        "display_name": "磐石#S01",
+        "display_name": "磐石#D01",
         "icon": "🪨",
         "color": "#27ae60",
         "style_tag": "防守型",
@@ -47,7 +47,7 @@ AI_PROFILES = {
         "suitable": "求稳为主、优先控制风险的场景",
     },
     "中立AI": {
-        "display_name": "天秤#S02",
+        "display_name": "天秤#B01",
         "icon": "⚖️",
         "color": "#3498db",
         "style_tag": "均衡型",
@@ -55,11 +55,11 @@ AI_PROFILES = {
         "skill_name": "【均衡之道】",
         "skill_desc": "在收益和风险之间找最优平衡点，不冒进也不保守",
         "personality": "均衡大师 · 选择困难症救星 · 综合最优",
-        "params": "置信度≥55% · 凯利0.60 · 20%安全边际",
+        "params": "置信度≥55% · 凯利0.60 · 10%安全边际",
         "suitable": "大多数场景的默认选择，攻守兼备",
     },
     "激进AI": {
-        "display_name": "猎鹰#S03",
+        "display_name": "猎鹰#A01",
         "icon": "🦅",
         "color": "#e74c3c",
         "style_tag": "攻击型",
@@ -67,11 +67,11 @@ AI_PROFILES = {
         "skill_name": "【疾风突袭】",
         "skill_desc": "有价值就敢上，仓位最重，波动最大",
         "personality": "激进派猎手 · 收益天花板 · 波动大",
-        "params": "置信度≥55% · 凯利0.90 · 20%安全边际",
+        "params": "置信度≥55% · 凯利0.90 · 0%安全边际",
         "suitable": "追求高覆盖、能承受较大波动的场景",
     },
     "串关AI": {
-        "display_name": "八卦#S04",
+        "display_name": "八卦#C01",
         "icon": "☯️",
         "color": "#9b59b6",
         "style_tag": "策略型",
@@ -225,212 +225,490 @@ def get_consensus_analysis(season_year):
 
 # ========== 页面主体 ==========
 st.markdown("# 🏆 模型验证")
-st.markdown("赛季制 · 每赛季500初始验证基数 · 凯利动态权重 · WF金标准验证")
+st.markdown("Walk Forward 金标准验证 · 无未来函数 · 真实预测能力评估")
 
-# 重大提醒
-st.error("""
-🚨 **重大提醒：v1.0.0之前版本存在特征泄露问题，所有历史回测数据均严重虚高，请勿参考！**
+# 验证体系说明（折叠式，节省空间）
+with st.expander("📊 验证体系说明（点击展开）", expanded=False):
+    col_v1, col_v2, col_v3 = st.columns(3)
+    
+    with col_v1:
+        st.info("""
+        ⭐ **Level 1：全量回测**
+        - 全量数据训练，全量数据测试
+        - 用途：快速筛选、方向探索
+        - **严重偏乐观，仅供参考**
+        """)
+    
+    with col_v2:
+        st.info("""
+        ⭐⭐⭐ **Level 2：赛季重置**
+        - 全量数据训练，按赛季重置资金
+        - 用途：策略稳定性初步评估
+        - 仍有未来函数
+        """)
+    
+    with col_v3:
+        st.success("""
+        ⭐⭐⭐⭐⭐ **Level 3：WF赛季重置**
+        - 滚动训练，无未来函数
+        - 用途：最终结论、金标准
+        - **所有结论以此为准**
+        """)
 
-当前页面正在逐步更新为WF（Walk Forward）赛季重置版的真实验证数据。
-部分旧数据可能尚未更新，仅供参考。
-""")
+st.divider()
 
-# 赛季选择
+# 赛季选择（如果有数据的话）
 seasons = get_all_seasons()
-if not seasons:
-    st.info("""
-    ### 📊 模型验证数据正在更新中...
-    
-    **为什么没有数据？**
-    - v1.0.0之前的版本存在特征泄露问题，所有历史回测数据均严重虚高
-    - 为了避免误导，旧的AI验证数据已全部清空
-    - 新的WF（Walk Forward）赛季重置版验证数据正在逐步生成中
-    
-    **当前状态：**
-    - ✅ 特征泄露已完全修复
-    - ✅ 所有模型已重新训练
-    - ✅ 三级验证体系已建立
-    - 🔄 AI策略回测数据待生成
-    
-    **可以先看这些：**
-    - 下方「策略规则说明」里有WF版的核心结论
-    - 「置信度 vs 实际准确率」有全量版参考数据（仅供参考，偏乐观）
-    - 预测中心可以正常使用单场预测功能
-    """)
-    st.stop()
+has_season_data = len(seasons) > 0
 
-col_sel, _ = st.columns([1, 3])
-with col_sel:
-    selected_season = st.selectbox("选择赛季", seasons, index=0)
+if has_season_data:
+    col_sel, _ = st.columns([1, 3])
+    with col_sel:
+        selected_season = st.selectbox("选择赛季", seasons, index=0)
+else:
+    st.info("ℹ️ AI策略赛季数据待生成，先展示策略动物园和其他验证结果")
 
 # ===== 15赛季历史平均战绩 =====
-with st.expander("📜 15赛季历史平均战绩（新赛季参考基准）", expanded=False):
-    conn = get_db()
-    hist_df = pd.read_sql("""
-        SELECT 
-            ai_name,
-            AVG(win_rate) as avg_win_rate,
-            AVG(max_drawdown) as avg_max_dd,
-            AVG(total_bets) as avg_bets,
-            SUM(CASE WHEN is_bankrupt = 1 THEN 1 ELSE 0 END) as bankrupt_seasons,
-            COUNT(*) as total_seasons
-        FROM ai_season_summary
-        GROUP BY ai_name
-        ORDER BY avg_win_rate DESC
-    """, conn)
-    conn.close()
-    
-    if len(hist_df) > 0:
-        display_hist = hist_df.copy()
-        # 映射AI展示名
-        display_hist['AI'] = display_hist['ai_name'].apply(
-            lambda x: f"{AI_PROFILES.get(x, {}).get('icon', '🤖')} {AI_PROFILES.get(x, {}).get('display_name', x)}"
-        )
-        display_hist['平均胜率'] = display_hist['avg_win_rate'].apply(lambda x: f"{x:.1%}")
-        display_hist['平均回撤'] = display_hist['avg_max_dd'].apply(lambda x: f"{x:.1%}")
-        display_hist['场均出手'] = display_hist['avg_bets'].round(0).astype(int)
-        display_hist['深撤赛季'] = display_hist['bankrupt_seasons'].astype(str) + '/' + display_hist['total_seasons'].astype(str)
-        st.dataframe(display_hist[['AI', '平均胜率', '平均回撤', '场均出手', '深撤赛季']], 
-                     use_container_width=True, hide_index=True)
-    st.caption("💡 新赛季开局参考：基于15个完整赛季的Walk-Forward OOS回测数据")
+if has_season_data:
+    with st.expander("📜 15赛季历史平均战绩（新赛季参考基准）", expanded=False):
+        conn = get_db()
+        hist_df = pd.read_sql("""
+            SELECT 
+                ai_name,
+                AVG(win_rate) as avg_win_rate,
+                AVG(max_drawdown) as avg_max_dd,
+                AVG(total_bets) as avg_bets,
+                SUM(CASE WHEN is_bankrupt = 1 THEN 1 ELSE 0 END) as bankrupt_seasons,
+                COUNT(*) as total_seasons
+            FROM ai_season_summary
+            GROUP BY ai_name
+            ORDER BY avg_win_rate DESC
+        """, conn)
+        conn.close()
+        
+        if len(hist_df) > 0:
+            display_hist = hist_df.copy()
+            # 映射AI展示名
+            display_hist['AI'] = display_hist['ai_name'].apply(
+                lambda x: f"{AI_PROFILES.get(x, {}).get('icon', '🤖')} {AI_PROFILES.get(x, {}).get('display_name', x)}"
+            )
+            display_hist['平均胜率'] = display_hist['avg_win_rate'].apply(lambda x: f"{x:.1%}")
+            display_hist['平均回撤'] = display_hist['avg_max_dd'].apply(lambda x: f"{x:.1%}")
+            display_hist['场均出手'] = display_hist['avg_bets'].round(0).astype(int)
+            display_hist['深撤赛季'] = display_hist['bankrupt_seasons'].astype(str) + '/' + display_hist['total_seasons'].astype(str)
+            st.dataframe(display_hist[['AI', '平均胜率', '平均回撤', '场均出手', '深撤赛季']], 
+                         use_container_width=True, hide_index=True)
+        st.caption("💡 新赛季开局参考：基于15个完整赛季的Walk-Forward OOS回测数据")
 
 # ========== 四个AI核心指标卡片（角色卡风格） ==========
-st.markdown("## 🎴 AI 策略角色卡")
+if has_season_data:
+    st.markdown("## 🎴 AI 策略角色卡")
 
-summary_df = get_season_summary(selected_season)
-cols = st.columns(4)
+    summary_df = get_season_summary(selected_season)
+    cols = st.columns(4)
 
-for idx, (ai_name, profile) in enumerate(AI_PROFILES.items()):
-    ai_data = summary_df[summary_df['ai_name'] == ai_name] if not profile.get('placeholder') else pd.DataFrame()
-    with cols[idx]:
-        if len(ai_data) > 0:
-            row = ai_data.iloc[0]
-            win_rate = row['win_rate']
-            bets = row['total_bets']
-            max_dd = row['max_drawdown']
-            roi = row['roi']
-            bankrupt = row['is_bankrupt']
+    for idx, (ai_name, profile) in enumerate(AI_PROFILES.items()):
+        ai_data = summary_df[summary_df['ai_name'] == ai_name] if not profile.get('placeholder') else pd.DataFrame()
+        with cols[idx]:
+            if len(ai_data) > 0:
+                row = ai_data.iloc[0]
+                win_rate = row['win_rate']
+                bets = row['total_bets']
+                max_dd = row['max_drawdown']
+                roi = row['roi']
+                bankrupt = row['is_bankrupt']
+                
+                growth_str = format_growth_multiplier(roi)
+                status = "📉 深度回撤" if bankrupt else "✅ 存活"
+                
+                # 置信度分布
+                conf_dist = get_confidence_distribution(ai_name, selected_season)
+                
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, {profile['color']}20, {profile['color']}08); 
+                            border: 2px solid {profile['color']}40; border-radius: 12px; padding: 16px; margin-bottom: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-size: 22px; font-weight: bold;">{profile['icon']} {profile['display_name']}</span>
+                        <span style="font-size: 11px; padding: 3px 8px; background: {'#27ae60' if not bankrupt else '#e74c3c'}20; 
+                              color: {'#27ae60' if not bankrupt else '#e74c3c'}; border-radius: 10px; font-weight: bold;">
+                            {'✅ 存活' if not bankrupt else '📉 回撤'}
+                        </span>
+                    </div>
+                    <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 10px;">
+                        {profile['style_tag']} · {profile['personality']}
+                    </div>
+                    <div style="font-size: 13px; color: #666; margin-bottom: 12px; font-style: italic;">
+                        "{profile['style_desc']}"
+                    </div>
+                    <div style="background: {profile['color']}10; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+                        <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 6px;">
+                            ⚡ {profile['skill_name']}
+                        </div>
+                        <div style="font-size: 12px; color: #555; line-height: 1.5;">
+                            {profile['skill_desc']}
+                        </div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
+                        <div>
+                            <div style="color: #888; font-size: 11px;">胜率</div>
+                            <div style="font-weight: bold; color: #333; font-size: 14px;">{win_rate:.1%}</div>
+                        </div>
+                        <div>
+                            <div style="color: #888; font-size: 11px;">回撤</div>
+                            <div style="font-weight: bold; color: #e74c3c; font-size: 14px;">{max_dd:.1%}</div>
+                        </div>
+                        <div>
+                            <div style="color: #888; font-size: 11px;">出手</div>
+                            <div style="font-weight: bold; color: #333; font-size: 14px;">{bets}场</div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.caption(f"📊 参数：{profile['params']}")
+                st.caption(f"🎯 置信分布：高{conf_dist.get('high_pct', 0):.0%} · 中{conf_dist.get('mid_pct', 0):.0%} · 低{conf_dist.get('low_pct', 0):.0%}")
+            else:
+                # 占位符AI（暂无数据）
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, {profile['color']}15, {profile['color']}05); 
+                            border: 2px dashed {profile['color']}40; border-radius: 12px; padding: 16px; margin-bottom: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-size: 22px; font-weight: bold;">{profile['icon']} {profile['display_name']}</span>
+                        <span style="font-size: 11px; padding: 3px 8px; background: #99999920; 
+                              color: #999; border-radius: 10px; font-weight: bold;">
+                            🚧 准备中
+                        </span>
+                    </div>
+                    <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 10px;">
+                        {profile['style_tag']} · {profile['personality']}
+                    </div>
+                    <div style="font-size: 13px; color: #666; margin-bottom: 12px; font-style: italic;">
+                        "{profile['style_desc']}"
+                    </div>
+                    <div style="background: {profile['color']}10; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+                        <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 6px;">
+                            ⚡ {profile['skill_name']}
+                        </div>
+                        <div style="font-size: 12px; color: #555; line-height: 1.5;">
+                            {profile['skill_desc']}
+                        </div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
+                        <div>
+                            <div style="color: #888; font-size: 11px;">胜率</div>
+                            <div style="font-weight: bold; color: #999; font-size: 14px;">--</div>
+                        </div>
+                        <div>
+                            <div style="color: #888; font-size: 11px;">回撤</div>
+                            <div style="font-weight: bold; color: #999; font-size: 14px;">--</div>
+                        </div>
+                        <div>
+                            <div style="color: #888; font-size: 11px;">出手</div>
+                            <div style="font-weight: bold; color: #999; font-size: 14px;">--</div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.caption(f"📊 参数：{profile['params']}")
+                st.caption("🚧 数据准备中，敬请期待")
+else:
+    # 没有赛季数据时，展示AI角色卡占位符
+    st.markdown("## 🎴 AI 策略角色卡")
+    cols = st.columns(4)
+    for idx, (ai_name, profile) in enumerate(AI_PROFILES.items()):
+        with cols[idx]:
+            # === 磐石AI：支持高级模式切换 ===
+            if ai_name == '保守AI':
+                # 高级模式状态
+                if 'panshi_advanced_mode' not in st.session_state:
+                    st.session_state['panshi_advanced_mode'] = False
+                
+                advanced_mode = st.session_state['panshi_advanced_mode']
+                
+                if advanced_mode:
+                    # 👑 Pro版角色卡（超级组合策略）
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #f39c1225, #f39c1208); 
+                                border: 2px solid #f39c1260; border-radius: 12px; padding: 16px; margin-bottom: 10px;
+                                box-shadow: 0 4px 12px #f39c1220;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <span style="font-size: 22px; font-weight: bold;">👑 磐石#D01 Pro</span>
+                            <span style="font-size: 11px; padding: 3px 8px; background: #f39c1230; 
+                                  color: #f39c12; border-radius: 10px; font-weight: bold;">
+                                👑 Pro
+                            </span>
+                        </div>
+                        <div style="font-size: 12px; color: #f39c12; font-weight: bold; margin-bottom: 10px;">
+                            超级组合 · 精选之王 · 收益天花板
+                        </div>
+                        <div style="font-size: 13px; color: #666; margin-bottom: 12px; font-style: italic;">
+                            "精选联赛，只做最好的机会"
+                        </div>
+                        <div style="background: #f39c1215; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+                            <div style="font-size: 12px; color: #f39c12; font-weight: bold; margin-bottom: 6px;">
+                                ⚡ 【王者之道】
+                            </div>
+                            <div style="font-size: 12px; color: #555; line-height: 1.5;">
+                                德甲+意甲精选联赛 + 高置信度平局机会，收益最大化
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
+                            <div>
+                                <div style="color: #888; font-size: 11px;">胜率</div>
+                                <div style="font-weight: bold; color: #27ae60; font-size: 14px;">51.9%</div>
+                            </div>
+                            <div>
+                                <div style="color: #888; font-size: 11px;">回撤</div>
+                                <div style="font-weight: bold; color: #e74c3c; font-size: 14px;">38.7%</div>
+                            </div>
+                            <div>
+                                <div style="color: #888; font-size: 11px;">出手</div>
+                                <div style="font-weight: bold; color: #333; font-size: 14px;">35场</div>
+                            </div>
+                        </div>
+                        <div style="text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #eee;">
+                            <span style="font-size: 13px; font-weight: bold; color: #f39c12;">
+                                赛季ROI：+22.6% 👑
+                            </span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.caption("📊 参数：联赛筛选(德甲+意甲) · 主胜/客胜≥55% · 平局≥50% · 凯利0.2")
+                    
+                    # 高级模式开关
+                    st.toggle("👑 高级模式", value=advanced_mode, key='panshi_advanced_mode',
+                              help="开启后启用超级组合策略：联赛筛选+平局联动+最优参数")
+                else:
+                    # 🪨 普通版角色卡（A方案基准）
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, {profile['color']}15, {profile['color']}05); 
+                                border: 2px solid {profile['color']}40; border-radius: 12px; padding: 16px; margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <span style="font-size: 22px; font-weight: bold;">{profile['icon']} {profile['display_name']}</span>
+                            <span style="font-size: 11px; padding: 3px 8px; background: {profile['color']}20; 
+                                  color: {profile['color']}; border-radius: 10px; font-weight: bold;">
+                                ✅ 已验证
+                            </span>
+                        </div>
+                        <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 10px;">
+                            {profile['style_tag']} · {profile['personality']}
+                        </div>
+                        <div style="font-size: 13px; color: #666; margin-bottom: 12px; font-style: italic;">
+                            "{profile['style_desc']}"
+                        </div>
+                        <div style="background: {profile['color']}10; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+                            <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 6px;">
+                                ⚡ {profile['skill_name']}
+                            </div>
+                            <div style="font-size: 12px; color: #555; line-height: 1.5;">
+                                {profile['skill_desc']}
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
+                            <div>
+                                <div style="color: #888; font-size: 11px;">胜率</div>
+                                <div style="font-weight: bold; color: #333; font-size: 14px;">53.9%</div>
+                            </div>
+                            <div>
+                                <div style="color: #888; font-size: 11px;">回撤</div>
+                                <div style="font-weight: bold; color: #e74c3c; font-size: 14px;">56.0%</div>
+                            </div>
+                            <div>
+                                <div style="color: #888; font-size: 11px;">出手</div>
+                                <div style="font-weight: bold; color: #333; font-size: 14px;">153场</div>
+                            </div>
+                        </div>
+                        <div style="text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #eee;">
+                            <span style="font-size: 13px; font-weight: bold; color: #27ae60;">
+                                赛季ROI：+0.9% ✅
+                            </span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.caption(f"📊 参数：{profile['params']}")
+                    
+                    # 高级模式开关
+                    st.toggle("👑 高级模式", value=advanced_mode, key='panshi_advanced_mode',
+                              help="开启后启用超级组合策略：联赛筛选+平局联动+最优参数")
             
-            growth_str = format_growth_multiplier(roi)
-            status = "📉 深度回撤" if bankrupt else "✅ 存活"
+            elif ai_name == '中立AI':
+                # ⚖️ 天秤#B01（均衡型）
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, {profile['color']}15, {profile['color']}05); 
+                            border: 2px solid {profile['color']}40; border-radius: 12px; padding: 16px; margin-bottom: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-size: 22px; font-weight: bold;">{profile['icon']} {profile['display_name']}</span>
+                        <span style="font-size: 11px; padding: 3px 8px; background: #f39c1220; 
+                              color: #f39c12; border-radius: 10px; font-weight: bold;">
+                            ⚠️ 待优化
+                        </span>
+                    </div>
+                    <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 10px;">
+                        {profile['style_tag']} · {profile['personality']}
+                    </div>
+                    <div style="font-size: 13px; color: #666; margin-bottom: 12px; font-style: italic;">
+                        "{profile['style_desc']}"
+                    </div>
+                    <div style="background: {profile['color']}10; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+                        <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 6px;">
+                            ⚡ {profile['skill_name']}
+                        </div>
+                        <div style="font-size: 12px; color: #555; line-height: 1.5;">
+                            {profile['skill_desc']}
+                        </div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
+                        <div>
+                            <div style="color: #888; font-size: 11px;">胜率</div>
+                            <div style="font-weight: bold; color: #333; font-size: 14px;">55.6%</div>
+                        </div>
+                        <div>
+                            <div style="color: #888; font-size: 11px;">回撤</div>
+                            <div style="font-weight: bold; color: #e74c3c; font-size: 14px;">69.1%</div>
+                        </div>
+                        <div>
+                            <div style="color: #888; font-size: 11px;">出手</div>
+                            <div style="font-weight: bold; color: #333; font-size: 14px;">288场</div>
+                        </div>
+                    </div>
+                    <div style="text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #eee;">
+                        <span style="font-size: 13px; font-weight: bold; color: #e74c3c;">
+                            赛季ROI：-30.8% ⚠️
+                        </span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.caption(f"📊 参数：{profile['params']}")
+                st.caption("💡 安全边际偏低，价值筛选不足，有待优化")
             
-            # 置信度分布
-            conf_dist = get_confidence_distribution(ai_name, selected_season)
+            elif ai_name == '激进AI':
+                # 🦅 猎鹰#A01（攻击型）
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, {profile['color']}15, {profile['color']}05); 
+                            border: 2px solid {profile['color']}40; border-radius: 12px; padding: 16px; margin-bottom: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-size: 22px; font-weight: bold;">{profile['icon']} {profile['display_name']}</span>
+                        <span style="font-size: 11px; padding: 3px 8px; background: #e74c3c20; 
+                              color: #e74c3c; border-radius: 10px; font-weight: bold;">
+                            ⚠️ 待优化
+                        </span>
+                    </div>
+                    <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 10px;">
+                        {profile['style_tag']} · {profile['personality']}
+                    </div>
+                    <div style="font-size: 13px; color: #666; margin-bottom: 12px; font-style: italic;">
+                        "{profile['style_desc']}"
+                    </div>
+                    <div style="background: {profile['color']}10; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+                        <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 6px;">
+                            ⚡ {profile['skill_name']}
+                        </div>
+                        <div style="font-size: 12px; color: #555; line-height: 1.5;">
+                            {profile['skill_desc']}
+                        </div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
+                        <div>
+                            <div style="color: #888; font-size: 11px;">胜率</div>
+                            <div style="font-weight: bold; color: #333; font-size: 14px;">63.3%</div>
+                        </div>
+                        <div>
+                            <div style="color: #888; font-size: 11px;">回撤</div>
+                            <div style="font-weight: bold; color: #e74c3c; font-size: 14px;">79.6%</div>
+                        </div>
+                        <div>
+                            <div style="color: #888; font-size: 11px;">出手</div>
+                            <div style="font-weight: bold; color: #333; font-size: 14px;">739场</div>
+                        </div>
+                    </div>
+                    <div style="text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #eee;">
+                        <span style="font-size: 13px; font-weight: bold; color: #e74c3c;">
+                            赛季ROI：-64.1% ⚠️
+                        </span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.caption(f"📊 参数：{profile['params']}")
+                st.caption("💡 无安全边际，出手太多质量差，亏损严重")
             
-            st.markdown(f"""
-            <div style="background: linear-gradient(135deg, {profile['color']}20, {profile['color']}08); 
-                        border: 2px solid {profile['color']}40; border-radius: 12px; padding: 16px; margin-bottom: 10px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                    <span style="font-size: 22px; font-weight: bold;">{profile['icon']} {profile['display_name']}</span>
-                    <span style="font-size: 11px; padding: 3px 8px; background: {'#27ae60' if not bankrupt else '#e74c3c'}20; 
-                          color: {'#27ae60' if not bankrupt else '#e74c3c'}; border-radius: 10px; font-weight: bold;">
-                        {'✅ 存活' if not bankrupt else '📉 回撤'}
-                    </span>
-                </div>
-                <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 10px;">
-                    {profile['style_tag']} · {profile['personality']}
-                </div>
-                <div style="font-size: 13px; color: #666; margin-bottom: 12px; font-style: italic;">
-                    "{profile['style_desc']}"
-                </div>
-                <div style="background: {profile['color']}10; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
-                    <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 6px;">
-                        ⚡ {profile['skill_name']}
+            else:
+                # ☯️ 八卦#C01（串关AI，待验证）
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, {profile['color']}15, {profile['color']}05); 
+                            border: 2px dashed {profile['color']}40; border-radius: 12px; padding: 16px; margin-bottom: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-size: 22px; font-weight: bold;">{profile['icon']} {profile['display_name']}</span>
+                        <span style="font-size: 11px; padding: 3px 8px; background: #99999920; 
+                              color: #999; border-radius: 10px; font-weight: bold;">
+                            🚧 待验证
+                        </span>
                     </div>
-                    <div style="font-size: 12px; color: #555; line-height: 1.5;">
-                        {profile['skill_desc']}
+                    <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 10px;">
+                        {profile['style_tag']} · {profile['personality']}
                     </div>
-                </div>
-                <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
-                    <div>
-                        <div style="color: #888; font-size: 11px;">胜率</div>
-                        <div style="font-weight: bold; color: #333; font-size: 14px;">{win_rate:.1%}</div>
+                    <div style="font-size: 13px; color: #666; margin-bottom: 12px; font-style: italic;">
+                        "{profile['style_desc']}"
                     </div>
-                    <div>
-                        <div style="color: #888; font-size: 11px;">回撤</div>
-                        <div style="font-weight: bold; color: #e74c3c; font-size: 14px;">{max_dd:.1%}</div>
+                    <div style="background: {profile['color']}10; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+                        <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 6px;">
+                            ⚡ {profile['skill_name']}
+                        </div>
+                        <div style="font-size: 12px; color: #555; line-height: 1.5;">
+                            {profile['skill_desc']}
+                        </div>
                     </div>
-                    <div>
-                        <div style="color: #888; font-size: 11px;">出手</div>
-                        <div style="font-weight: bold; color: #333; font-size: 14px;">{bets}场</div>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.caption(f"📊 参数：{profile['params']}")
-            st.caption(f"🎯 置信分布：高{conf_dist.get('high_pct', 0):.0%} · 中{conf_dist.get('mid_pct', 0):.0%} · 低{conf_dist.get('low_pct', 0):.0%}")
-        else:
-            # 占位符AI（暂无数据）
-            st.markdown(f"""
-            <div style="background: linear-gradient(135deg, {profile['color']}15, {profile['color']}05); 
-                        border: 2px dashed {profile['color']}40; border-radius: 12px; padding: 16px; margin-bottom: 10px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                    <span style="font-size: 22px; font-weight: bold;">{profile['icon']} {profile['display_name']}</span>
-                    <span style="font-size: 11px; padding: 3px 8px; background: #99999920; 
-                          color: #999; border-radius: 10px; font-weight: bold;">
-                        🚧 准备中
-                    </span>
-                </div>
-                <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 10px;">
-                    {profile['style_tag']} · {profile['personality']}
-                </div>
-                <div style="font-size: 13px; color: #666; margin-bottom: 12px; font-style: italic;">
-                    "{profile['style_desc']}"
-                </div>
-                <div style="background: {profile['color']}10; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
-                    <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 6px;">
-                        ⚡ {profile['skill_name']}
-                    </div>
-                    <div style="font-size: 12px; color: #555; line-height: 1.5;">
-                        {profile['skill_desc']}
+                    <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
+                        <div>
+                            <div style="color: #888; font-size: 11px;">胜率</div>
+                            <div style="font-weight: bold; color: #999; font-size: 14px;">--</div>
+                        </div>
+                        <div>
+                            <div style="color: #888; font-size: 11px;">回撤</div>
+                            <div style="font-weight: bold; color: #999; font-size: 14px;">--</div>
+                        </div>
+                        <div>
+                            <div style="color: #888; font-size: 11px;">出手</div>
+                            <div style="font-weight: bold; color: #999; font-size: 14px;">--</div>
+                        </div>
                     </div>
                 </div>
-                <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
-                    <div>
-                        <div style="color: #888; font-size: 11px;">胜率</div>
-                        <div style="font-weight: bold; color: #999; font-size: 14px;">--</div>
-                    </div>
-                    <div>
-                        <div style="color: #888; font-size: 11px;">回撤</div>
-                        <div style="font-weight: bold; color: #999; font-size: 14px;">--</div>
-                    </div>
-                    <div>
-                        <div style="color: #888; font-size: 11px;">出手</div>
-                        <div style="font-weight: bold; color: #999; font-size: 14px;">--</div>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.caption(f"📊 参数：{profile['params']}")
-            st.caption("🚧 数据准备中，敬请期待")
+                """, unsafe_allow_html=True)
+                
+                st.caption(f"📊 参数：{profile['params']}")
+                st.caption("🚧 串关策略WF验证待生成")
+
 
 # ========== AI共识分析 ==========
-st.markdown("## 🤝 共识分析")
-st.caption("多个AI同时看好的比赛，可靠性显著更高 — 15赛季历史数据验证")
+if has_season_data:
+    st.markdown("## 🤝 共识分析")
+    st.caption("多个AI同时看好的比赛，可靠性显著更高 — 15赛季历史数据验证")
 
-consensus_df = get_consensus_analysis(selected_season)
-if consensus_df is not None and len(consensus_df) > 0:
-    st.dataframe(consensus_df, use_container_width=True, hide_index=True)
-    
-    col_c1, col_c2 = st.columns(2)
-    with col_c1:
-        st.success("""
-        **📌 核心规律**
-        - 三AI共识胜率比单激进高出 **30+ 个百分点**
-        - 15个赛季全部稳定成立，差值26%~36%
-        - 共识度越高，赔率越低，但胜率提升幅度更大
-        """)
-    with col_c2:
-        st.info("""
-        **💡 决策参考**
-        - 三AI共识场次：放心重仓，可靠性接近保守AI
-        - 仅激进出手场次：谨慎对待，接近抛硬币
-        - 共识度是比单一置信度更可靠的筛选信号
-        """)
-else:
-    st.info("暂无共识数据")
+    consensus_df = get_consensus_analysis(selected_season)
+    if consensus_df is not None and len(consensus_df) > 0:
+        st.dataframe(consensus_df, use_container_width=True, hide_index=True)
+        
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            st.success("""
+            **📌 核心规律**
+            - 三AI共识胜率比单激进高出 **30+ 个百分点**
+            - 15个赛季全部稳定成立，差值26%~36%
+            - 共识度越高，赔率越低，但胜率提升幅度更大
+            """)
+        with col_c2:
+            st.info("""
+            **💡 决策参考**
+            - 三AI共识场次：放心重仓，可靠性接近保守AI
+            - 仅激进出手场次：谨慎对待，接近抛硬币
+            - 共识度是比单一置信度更可靠的筛选信号
+            """)
+    else:
+        st.info("暂无共识数据")
 
 # ========== 决策参考 ==========
 st.markdown("## 💡 决策参考")
@@ -457,136 +735,200 @@ with col2:
     - **任何比赛都要防平局**：很多翻车都是平局
     """)
 
-with st.expander("📊 置信度 vs 实际准确率（全量版参考·偏乐观）", expanded=False):
-    st.caption("模型输出置信度与真实胜率的对应关系，出手决策的核心参考")
-    st.warning("""
-    ⚠️ **重要提醒：以下为全量训练模型的参考数据，存在未来函数，偏乐观！**
-    
-    - 全量训练模型已经见过所有比赛数据，相当于开了上帝视角
-    - 真实WF（无未来函数）下的准确率会低很多，约53-55%
-    - 仅供方向参考，具体数值请以WF版验证为准
-    """)
-    conf_acc_df = pd.DataFrame([
-        {"置信度区间": "< 40%", "场次占比": "6.2%", "全量版准确率": "35.5%", "WF版参考": "~32%", "策略建议": "避免出手"},
-        {"置信度区间": "40-50%", "场次占比": "20.6%", "全量版准确率": "42.5%", "WF版参考": "~40%", "策略建议": "谨慎观察"},
-        {"置信度区间": "50-60%", "场次占比": "17.6%", "全量版准确率": "51.1%", "WF版参考": "~48%", "策略建议": "轻仓试探"},
-        {"置信度区间": "60-70%", "场次占比": "14.1%", "全量版准确率": "61.5%", "WF版参考": "~55%", "策略建议": "正常出手"},
-        {"置信度区间": "70-80%", "场次占比": "12.9%", "全量版准确率": "72.3%", "WF版参考": "~62%", "策略建议": "重点关注"},
-        {"置信度区间": "≥ 80%", "场次占比": "28.6%", "全量版准确率": "89.1%", "WF版参考": "~70%", "策略建议": "重仓出击"},
-    ])
-    st.dataframe(conf_acc_df, hide_index=True, use_container_width=True)
-    st.caption("💡 WF版数据为估算值，精确值待WF验证完成后更新")
-
 # ========== 最近出手记录 ==========
-with st.expander("📝 最近出手记录（含筛选）", expanded=False):
+if has_season_data:
+    with st.expander("📝 最近出手记录（含筛选）", expanded=False):
+        # 筛选器
+        fcol1, fcol2, fcol3 = st.columns(3)
+        with fcol1:
+            filt_league = st.selectbox("联赛筛选", ["全部联赛", "英超", "德甲", "西甲", "意甲", "法甲"], key="filt_league")
+        with fcol2:
+            filt_result = st.selectbox("结果筛选", ["全部", "仅命中", "仅失手"], key="filt_result")
+        with fcol3:
+            filt_value = st.selectbox("价值筛选", ["全部", "有价值", "无价值"], key="filt_value")
 
-    # 筛选器
-    fcol1, fcol2, fcol3 = st.columns(3)
-    with fcol1:
-        filt_league = st.selectbox("联赛筛选", ["全部联赛", "英超", "德甲", "西甲", "意甲", "法甲"], key="filt_league")
-    with fcol2:
-        filt_result = st.selectbox("结果筛选", ["全部", "仅命中", "仅失手"], key="filt_result")
-    with fcol3:
-        filt_value = st.selectbox("价值筛选", ["全部", "有价值", "无价值"], key="filt_value")
+        league_map = {"英超": "E0", "德甲": "D1", "西甲": "LLA", "意甲": "SER", "法甲": "LIG"}
+        filt_league_code = league_map.get(filt_league)
 
-    league_map = {"英超": "E0", "德甲": "D1", "西甲": "LLA", "意甲": "SER", "法甲": "LIG"}
-    filt_league_code = league_map.get(filt_league)
+        def enrich_bet_df(log_df):
+            """给出手记录加派生字段：仓位、共识等级、价值标记"""
+            if len(log_df) == 0:
+                return log_df
+            df = log_df.copy()
+            # 仓位比例
+            bet_before = df['score_after'] - df['profit']
+            df['验证权重'] = (df['bet_amount'] / bet_before).apply(lambda x: f"{x:.1%}")
+            # 格式化
+            df['confidence_pct'] = df['confidence'].apply(lambda x: f"{x:.1%}")
+            df['win_label'] = df['win'].apply(lambda x: "✅ 命中" if x else "❌ 失手")
+            df['actual_short'] = df['actual_result'].map({'主队胜': '主胜', '平局': '平局', '客队胜': '客胜'})
+            df['pred_short'] = df['prediction'].map({'主队胜': '主胜', '平局': '平局', '客队胜': '客胜'})
+            # 价值标记：置信度 > 1/赔率 即为正价值
+            implied_prob = 1.0 / df['odds']
+            df['value_diff'] = df['confidence'] - implied_prob
+            df['价值'] = df['value_diff'].apply(lambda x: "💎 有价值" if x > 0 else "📉 无价值")
+            # 共识等级：按比赛分组统计出手AI数量
+            df['match_key'] = df['match_date'].astype(str) + '|' + df['home_team'].astype(str) + '|' + df['away_team'].astype(str)
+            ai_count = df.groupby('match_key')['ai_name'].nunique()
+            df['ai_count'] = df['match_key'].map(ai_count)
+            df['共识'] = df['ai_count'].apply(lambda x: "🤝 三AI共识" if x >= 3 else ("⚖️ 两AI" if x == 2 else "🔥 仅激进"))
+            return df
 
-    def enrich_bet_df(log_df):
-        """给出手记录加派生字段：仓位、共识等级、价值标记"""
-        if len(log_df) == 0:
-            return log_df
-        df = log_df.copy()
-        # 仓位比例
-        bet_before = df['score_after'] - df['profit']
-        df['验证权重'] = (df['bet_amount'] / bet_before).apply(lambda x: f"{x:.1%}")
-        # 格式化
-        df['confidence_pct'] = df['confidence'].apply(lambda x: f"{x:.1%}")
-        df['win_label'] = df['win'].apply(lambda x: "✅ 命中" if x else "❌ 失手")
-        df['actual_short'] = df['actual_result'].map({'主队胜': '主胜', '平局': '平局', '客队胜': '客胜'})
-        df['pred_short'] = df['prediction'].map({'主队胜': '主胜', '平局': '平局', '客队胜': '客胜'})
-        # 价值标记：置信度 > 1/赔率 即为正价值
-        implied_prob = 1.0 / df['odds']
-        df['value_diff'] = df['confidence'] - implied_prob
-        df['价值'] = df['value_diff'].apply(lambda x: "💎 有价值" if x > 0 else "📉 无价值")
-        # 共识等级：按比赛分组统计出手AI数量
-        df['match_key'] = df['match_date'].astype(str) + '|' + df['home_team'].astype(str) + '|' + df['away_team'].astype(str)
-        ai_count = df.groupby('match_key')['ai_name'].nunique()
-        df['ai_count'] = df['match_key'].map(ai_count)
-        df['共识'] = df['ai_count'].apply(lambda x: "🤝 三AI共识" if x >= 3 else ("⚖️ 两AI" if x == 2 else "🔥 仅激进"))
-        return df
+        def apply_filters(df):
+            if filt_league_code:
+                df = df[df['league_code'] == filt_league_code]
+            if filt_result == "仅命中":
+                df = df[df['win'] == 1]
+            elif filt_result == "仅失手":
+                df = df[df['win'] == 0]
+            if filt_value == "有价值":
+                df = df[df['value_diff'] > 0]
+            elif filt_value == "无价值":
+                df = df[df['value_diff'] <= 0]
+            return df
 
-    def apply_filters(df):
-        if filt_league_code:
-            df = df[df['league_code'] == filt_league_code]
-        if filt_result == "仅命中":
-            df = df[df['win'] == 1]
-        elif filt_result == "仅失手":
-            df = df[df['win'] == 0]
-        if filt_value == "有价值":
-            df = df[df['value_diff'] > 0]
-        elif filt_value == "无价值":
-            df = df[df['value_diff'] <= 0]
-        return df
+        tab1, tab2, tab3, tab4 = st.tabs(["全部", "🦅 猎鹰#S03", "⚖️ 天秤#S02", "🪨 磐石#S01"])
 
-    tab1, tab2, tab3, tab4 = st.tabs(["全部", "🦅 猎鹰#S03", "⚖️ 天秤#S02", "🪨 磐石#S01"])
-
-    with tab1:
-        log_df = get_betting_log(season_year=selected_season, limit=200)
-        if len(log_df) > 0:
-            df = enrich_bet_df(log_df)
-            df = apply_filters(df)
-            if len(df) > 0:
-                # 映射AI展示名
-                df['AI'] = df['ai_name'].apply(
-                    lambda x: f"{AI_PROFILES.get(x, {}).get('icon', '🤖')} {AI_PROFILES.get(x, {}).get('display_name', x)}"
-                )
-                show = df[['match_date', 'AI', 'home_team', 'away_team', 'pred_short', 
-                           'confidence_pct', 'odds', '验证权重', '共识', '价值', 'actual_short', 'win_label']]
-                show.columns = ['日期', 'AI', '主队', '客队', '预测', '置信度', '市场概率', '验证权重', '共识', '置信度优势', '赛果', '结果']
-                st.dataframe(show, use_container_width=True, hide_index=True)
-                st.caption(f"共 {len(df)} 条记录 | 胜率: {(df['win'].mean()):.1%}")
-            else:
-                st.info("当前筛选条件下无记录")
-
-    for tab_idx, ai_name in enumerate(['激进AI', '中立AI', '保守AI'], start=2):
-        with [tab2, tab3, tab4][tab_idx-2]:
-            log_df = get_betting_log(ai_name, season_year=selected_season, limit=200)
+        with tab1:
+            log_df = get_betting_log(season_year=selected_season, limit=200)
             if len(log_df) > 0:
                 df = enrich_bet_df(log_df)
                 df = apply_filters(df)
                 if len(df) > 0:
-                    show = df[['match_date', 'home_team', 'away_team', 'pred_short', 
+                    # 映射AI展示名
+                    df['AI'] = df['ai_name'].apply(
+                        lambda x: f"{AI_PROFILES.get(x, {}).get('icon', '🤖')} {AI_PROFILES.get(x, {}).get('display_name', x)}"
+                    )
+                    show = df[['match_date', 'AI', 'home_team', 'away_team', 'pred_short', 
                                'confidence_pct', 'odds', '验证权重', '共识', '价值', 'actual_short', 'win_label']]
-                    show.columns = ['日期', '主队', '客队', '预测', '置信度', '市场概率', '验证权重', '共识', '置信度优势', '赛果', '结果']
+                    show.columns = ['日期', 'AI', '主队', '客队', '预测', '置信度', '市场概率', '验证权重', '共识', '置信度优势', '赛果', '结果']
                     st.dataframe(show, use_container_width=True, hide_index=True)
                     st.caption(f"共 {len(df)} 条记录 | 胜率: {(df['win'].mean()):.1%}")
                 else:
                     st.info("当前筛选条件下无记录")
 
-    # ========== 赔率分布统计 ==========
-    st.markdown("---")
-    st.markdown("###### 📊 赔率分布统计")
-    log_all = get_betting_log(season_year=selected_season, limit=1000)
-    if len(log_all) > 0:
-        df_all = enrich_bet_df(log_all)
-        df_all = apply_filters(df_all)
-        if len(df_all) > 0:
-            # 赔率分桶
-            bins = [0, 1.5, 2.0, 2.5, 3.0, 4.0, 99]
-            labels = ["<1.5", "1.5-2.0", "2.0-2.5", "2.5-3.0", "3.0-4.0", "4.0+"]
-            df_all['odds_bin'] = pd.cut(df_all['odds'], bins=bins, labels=labels)
-            dist = df_all.groupby('odds_bin', observed=True).agg(
-                出手数=('win', 'count'),
-                胜率=('win', 'mean')
-            ).reset_index()
-            dist['胜率'] = dist['胜率'].apply(lambda x: f"{x:.1%}")
-            dist.columns = ['赔率区间', '出手数', '胜率']
-            dcol1, dcol2 = st.columns([2, 1])
-            dcol1.dataframe(dist, use_container_width=True, hide_index=True)
-            dcol2.metric("平均赔率", f"{df_all['odds'].mean():.2f}")
-        else:
-            st.info("暂无数据")
+        for tab_idx, ai_name in enumerate(['激进AI', '中立AI', '保守AI'], start=2):
+            with [tab2, tab3, tab4][tab_idx-2]:
+                log_df = get_betting_log(ai_name, season_year=selected_season, limit=200)
+                if len(log_df) > 0:
+                    df = enrich_bet_df(log_df)
+                    df = apply_filters(df)
+                    if len(df) > 0:
+                        show = df[['match_date', 'home_team', 'away_team', 'pred_short', 
+                                   'confidence_pct', 'odds', '验证权重', '共识', '价值', 'actual_short', 'win_label']]
+                        show.columns = ['日期', '主队', '客队', '预测', '置信度', '市场概率', '验证权重', '共识', '置信度优势', '赛果', '结果']
+                        st.dataframe(show, use_container_width=True, hide_index=True)
+                        st.caption(f"共 {len(df)} 条记录 | 胜率: {(df['win'].mean()):.1%}")
+                    else:
+                        st.info("当前筛选条件下无记录")
+
+        # ========== 赔率分布统计 ==========
+        st.markdown("---")
+        st.markdown("###### 📊 赔率分布统计")
+        log_all = get_betting_log(season_year=selected_season, limit=1000)
+        if len(log_all) > 0:
+            df_all = enrich_bet_df(log_all)
+            df_all = apply_filters(df_all)
+            if len(df_all) > 0:
+                # 赔率分桶
+                bins = [0, 1.5, 2.0, 2.5, 3.0, 4.0, 99]
+                labels = ["<1.5", "1.5-2.0", "2.0-2.5", "2.5-3.0", "3.0-4.0", "4.0+"]
+                df_all['odds_bin'] = pd.cut(df_all['odds'], bins=bins, labels=labels)
+                dist = df_all.groupby('odds_bin', observed=True).agg(
+                    出手数=('win', 'count'),
+                    胜率=('win', 'mean')
+                ).reset_index()
+                dist['胜率'] = dist['胜率'].apply(lambda x: f"{x:.1%}")
+                dist.columns = ['赔率区间', '出手数', '胜率']
+                dcol1, dcol2 = st.columns([2, 1])
+                dcol1.dataframe(dist, use_container_width=True, hide_index=True)
+                dcol2.metric("平均赔率", f"{df_all['odds'].mean():.2f}")
+            else:
+                st.info("暂无数据")
+
+# ========== 核心验证结论 ==========
+st.markdown("## 🎯 核心验证结论")
+
+tab_conf, tab_league = st.tabs(["📈 置信度 vs 准确率", "🏆 联赛难度排行"])
+
+with tab_conf:
+    st.caption("Walk Forward滚动验证，无未来函数，模型输出置信度与真实准确率的对应关系")
+    try:
+        conn = get_db()
+        conf_acc_df = pd.read_sql("SELECT * FROM wf_confidence_accuracy", conn)
+        conn.close()
+
+        col_c1, col_c2 = st.columns([1, 1])
+
+        with col_c1:
+            st.markdown("###### 📊 分桶数据")
+            conf_display = conf_acc_df.copy()
+            conf_display['准确率'] = conf_display['准确率'].apply(lambda x: f"{x:.2%}")
+            conf_display['平均置信度'] = conf_display['平均置信度'].apply(lambda x: f"{x:.2%}")
+            conf_display['高估程度'] = (conf_acc_df['平均置信度'] - conf_acc_df['准确率']).apply(lambda x: f"+{x:.1%}" if x > 0 else f"{x:.1%}")
+            conf_display = conf_display[['置信度区间', '样本数', '平均置信度', '准确率', '高估程度']]
+            st.dataframe(conf_display, hide_index=True, use_container_width=True, height=400)
+
+        with col_c2:
+            st.markdown("###### 📈 曲线图")
+            try:
+                chart_df = conf_acc_df.copy()
+                chart_df = chart_df.set_index('置信度区间')[['准确率', '平均置信度']]
+                chart_df.columns = ['真实准确率', '模型输出置信度']
+                st.line_chart(chart_df, height=400)
+            except Exception as e:
+                st.caption(f"图表渲染失败：{str(e)}")
+
+        st.success("""
+        📌 **关键结论**：
+        1. 置信度与准确率正相关，趋势完全正确
+        2. 85%以上高置信度 → 真实准确率约82%
+        3. 模型整体略微高估置信度（平均高4-6个百分点）
+        4. 高置信度区间高估更明显（约8个百分点）
+        """)
+    except Exception as e:
+        st.info(f"置信度数据加载失败：{str(e)}")
+
+with tab_league:
+    st.caption("联赛独立模型Walk Forward验证，准确率越高说明规律越稳定、越好预测")
+    try:
+        conn = get_db()
+        league_rank_df = pd.read_sql("SELECT * FROM league_independent_wf ORDER BY 整体准确率 DESC", conn)
+        conn.close()
+
+        col_l1, col_l2 = st.columns([1, 1])
+
+        with col_l1:
+            st.markdown("###### 📊 详细数据")
+            league_display = league_rank_df.copy()
+            league_display['整体准确率'] = league_display['整体准确率'].apply(lambda x: f"{x:.2%}")
+            league_display['平均置信度'] = league_display['平均置信度'].apply(lambda x: f"{x:.2%}")
+            league_display['>=70%准确率'] = league_display['>=70%准确率'].apply(lambda x: f"{x:.2%}")
+            league_display = league_display[['联赛', '总场次', '整体准确率', '平均置信度', '>=70%准确率']]
+            league_display.columns = ['联赛', '验证场次', '整体准确率', '平均置信度', '高置信准确率']
+            st.dataframe(league_display, hide_index=True, use_container_width=True, height=300)
+
+        with col_l2:
+            st.markdown("###### 📈 准确率对比")
+            try:
+                chart_df = league_rank_df.copy()
+                chart_df = chart_df.set_index('联赛')[['整体准确率', '>=70%准确率']]
+                chart_df.columns = ['整体准确率', '高置信准确率(≥70%)']
+                st.bar_chart(chart_df, height=350)
+            except Exception as e:
+                st.caption(f"图表渲染失败：{str(e)}")
+
+        st.info("""
+        💡 **关键发现**：
+        1. **英超最好预测** — 整体准确率最高，强弱分明
+        2. **西甲高置信最准** — 虽然整体第三，但高置信度比赛准确率最高
+        3. **法甲/德甲最难** — 整体准确率最低，冷门多
+        4. **联赛独立模型 < 通用模型** — 单个联赛数据量少，不如全联赛训练的泛化能力强
+        """)
+    except Exception as e:
+        st.info(f"联赛排名数据加载失败：{str(e)}")
+
+st.divider()
 
 # ========== 策略动物园（二级参考，折叠收起） ==========
 with st.expander("🦓 策略动物园 · 36组参数回测排行榜（点击展开）"):
@@ -654,6 +996,28 @@ with st.expander("🦓 策略动物园 · 36组参数回测排行榜（点击展
             5. **凯利只影响波动**：同样条件下，凯利大小不影响夏普，只放大收益和回撤
             """)
             
+            # 🎲 随机基准对比
+            st.markdown("### 🎲 随机基准对比（500次蒙特卡洛）")
+            st.caption("和纯随机策略对比，验证AI是否真的有预测能力")
+            
+            col_r1, col_r2, col_r3 = st.columns(3)
+            with col_r1:
+                st.metric("随机策略平均ROI", "-8.6%", 
+                          "6种随机策略平均")
+            with col_r2:
+                st.metric("最好随机策略", "-4.4%", 
+                          "热门猎手")
+            with col_r3:
+                st.metric("最好AI策略", "+0.9%", 
+                          "磐石#D01", delta_color="normal")
+            
+            st.success("""
+            ✅ **结论：AI确实有alpha，但很微弱**
+            - 最好的AI策略（磐石）比最好的随机策略好约5个百分点
+            - 但alpha非常有限，远不足以覆盖交易成本
+            - 符合市场有效性假说：足球博彩市场接近有效
+            """)
+            
             st.markdown("---")
             
             # 格式化展示
@@ -706,6 +1070,87 @@ with st.expander("🦓 策略动物园 · 36组参数回测排行榜（点击展
         else:
             st.info("全量版策略动物园数据未生成")
         conn.close()
+
+# ========== 最新策略研究发现 ==========
+with st.expander("🔬 最新策略研究发现（v1.0.4）", expanded=False):
+    st.caption("基于WF金标准的深度策略探索，属于前沿研究成果")
+    
+    col_r1, col_r2 = st.columns(2)
+    
+    with col_r1:
+        st.markdown("#### 1️⃣ 出手越少，ROI越高")
+        st.info("""
+        **核心发现：完全单调递减！**
+        
+        | 每周最低出手 | 平均赛季ROI |
+        |-------------|-----------|
+        | 无限制 | **+9.29%** 🏆 |
+        | 1次 | +9.05% |
+        | 2次（基准） | +8.47% |
+        | 5次 | -0.22% |
+        
+        **结论**：强制补仓的比赛质量差，拉低收益。宁缺毋滥！
+        """)
+        
+        st.markdown("#### 2️⃣ 联赛筛选效果显著")
+        st.success("""
+        **核心发现：德甲+意甲1+1>2！**
+        
+        | 方案 | 平均赛季ROI | 最大回撤 |
+        |------|-----------|---------|
+        | 所有联赛（基准） | +9.29% | 47.57% |
+        | 只投德甲 | +10.81% | **17.62%** ✅ |
+        | **德甲+意甲** | **+17.91%** 🚀 | 31.99% |
+        
+        **结论**：分散风险+互补，1+1>2
+        """)
+        
+        st.markdown("#### 3️⃣ 德甲专项优化")
+        st.info("""
+        **最优参数：**
+        - 置信度阈值：50%（比默认低5%）
+        - 安全边际：1.2
+        - 凯利系数：0.5
+        - **ROI：+13.57%**（提升+2.76%）
+        """)
+    
+    with col_r2:
+        st.markdown("#### 4️⃣ 平局联动效果惊人")
+        st.success("""
+        **核心发现：加入平局策略ROI提升4.73%！**
+        
+        | 方案 | 平均赛季ROI | 总出手/赛季 |
+        |------|-----------|------------|
+        | 只有磐石 | +17.91% | 32.0 |
+        | **磐石+平局** | **+22.64%** 🏆 | 34.9 |
+        
+        **最优平局参数：**
+        - 平局置信度阈值：50%
+        - 平局凯利系数：0.2
+        - 平局出手只有4.6次/赛季，不多但贡献很大
+        """)
+        
+        st.markdown("#### 👑 超级组合策略（最终版）")
+        st.balloons()
+        st.markdown("""
+        **最终配置：**
+        - ✅ 联赛筛选：只投德甲 + 意甲
+        - ✅ 主胜/客胜：磐石策略（置信≥55% + 边际1.2 + 凯利0.2）
+        - ✅ 平局策略：高置信度平局（置信≥50% + 凯利0.2）
+        - ✅ 出手限制：无最低出手，宁缺毋滥
+        
+        **最终成绩：**
+        - 🏆 平均赛季ROI：**+22.64%**
+        - 📉 最大回撤：**38.71%**
+        - 🎯 出手/赛季：**34.9次**（其中平局4.6次）
+        """)
+        
+        st.warning("""
+        ⚠️ **风险提示：**
+        - 平局出手较少，样本量有限，可能存在过拟合
+        - 联赛筛选可能存在数据窥探偏差
+        - 建议作为高级可选策略，谨慎参考
+        """)
 
 # ========== 策略说明 ==========
 with st.expander("📖 策略规则说明"):
@@ -776,56 +1221,57 @@ with st.expander("📖 策略规则说明"):
     """)
 
 # ========== 积分与增长倍数（数据记录，仅供参考） ==========
-with st.expander("📊 积分走势与增长倍数（数据记录·仅供参考）", expanded=False):
-    st.warning("""
-    ⚠️ **重要提示：以下数据基于全量训练模型，存在未来函数，仅供研究记录使用**
-    
-    - 全量训练模型已经见过所有比赛数据，相当于开了上帝视角
-    - 凯利公式 + 高频出手的复利效应会导致积分呈指数级增长，数字虚高
-    - 真实 Walk Forward（无未来函数）下的增长倍数仅为数千倍，远低于此
-    - **核心参考指标：胜率、回撤、夏普，增长倍数仅作数据记录**
-    """)
-    
-    # 积分走势图
-    st.markdown("### 📈 积分走势（对数刻度）")
-    st.caption("单赛季内积分变化（每个赛季独立重置500），复利效应导致数字虚高，主要看相对节奏和回撤深度")
+if has_season_data:
+    with st.expander("📊 积分走势与增长倍数（数据记录·仅供参考）", expanded=False):
+        st.warning("""
+        ⚠️ **重要提示：以下数据基于全量训练模型，存在未来函数，仅供研究记录使用**
+        
+        - 全量训练模型已经见过所有比赛数据，相当于开了上帝视角
+        - 凯利公式 + 高频出手的复利效应会导致积分呈指数级增长，数字虚高
+        - 真实 Walk Forward（无未来函数）下的增长倍数仅为数千倍，远低于此
+        - **核心参考指标：胜率、回撤、夏普，增长倍数仅作数据记录**
+        """)
+        
+        # 积分走势图
+        st.markdown("### 📈 积分走势（对数刻度）")
+        st.caption("单赛季内积分变化（每个赛季独立重置500），复利效应导致数字虚高，主要看相对节奏和回撤深度")
 
-    chart_data = pd.DataFrame()
-    for ai_name, profile in AI_PROFILES.items():
-        if profile.get('placeholder'):
-            continue
-        curve = get_score_curve(ai_name, selected_season)
-        if len(curve) > 0:
-            curve = curve.reset_index(drop=True)
-            curve['idx'] = curve.index  # 用累计序号做x轴，避免日期重复
-            display_name = f"{profile['icon']} {profile['display_name']}"
-            curve = curve.set_index('idx')[['score_after']].rename(columns={'score_after': display_name})
-            chart_data = pd.concat([chart_data, curve], axis=1)
+        chart_data = pd.DataFrame()
+        for ai_name, profile in AI_PROFILES.items():
+            if profile.get('placeholder'):
+                continue
+            curve = get_score_curve(ai_name, selected_season)
+            if len(curve) > 0:
+                curve = curve.reset_index(drop=True)
+                curve['idx'] = curve.index  # 用累计序号做x轴，避免日期重复
+                display_name = f"{profile['icon']} {profile['display_name']}"
+                curve = curve.set_index('idx')[['score_after']].rename(columns={'score_after': display_name})
+                chart_data = pd.concat([chart_data, curve], axis=1)
 
-    if len(chart_data) > 0:
-        # 对数转换后展示（加1防止log(0)）
-        log_data = np.log10(chart_data.clip(lower=1))
-        st.line_chart(log_data, height=350)
-        st.caption("纵坐标为积分的10为底对数值，数值差异被压缩，主要看趋势和相对位置")
-    else:
-        st.info("暂无走势数据")
-    
-    st.markdown("---")
-    
-    # 详细数据表
-    st.markdown("### 📋 赛季详细数据")
-    if len(summary_df) > 0:
-        display_df = summary_df.copy()
-        # 映射AI展示名
-        display_df['AI'] = display_df['ai_name'].apply(
-            lambda x: f"{AI_PROFILES.get(x, {}).get('icon', '🤖')} {AI_PROFILES.get(x, {}).get('display_name', x)}"
-        )
-        display_df['增长倍数'] = display_df['roi'].apply(format_growth_multiplier)
-        display_df['胜率'] = display_df['win_rate'].apply(lambda x: f"{x:.2%}")
-        display_df['最大回撤'] = display_df['max_drawdown'].apply(lambda x: f"{x:.2%}")
-        display_df['深度回撤'] = display_df['is_bankrupt'].apply(lambda x: "是" if x else "否")
-        st.dataframe(
-            display_df[['AI', '增长倍数', '胜率', 'total_bets', '最大回撤', '深度回撤']].rename(columns={'total_bets': '出手数'}), 
-            use_container_width=True, hide_index=True
-        )
-        st.caption("增长倍数为全量训练模型的理论计算值，存在未来函数，仅供参考")
+        if len(chart_data) > 0:
+            # 对数转换后展示（加1防止log(0)）
+            log_data = np.log10(chart_data.clip(lower=1))
+            st.line_chart(log_data, height=350)
+            st.caption("纵坐标为积分的10为底对数值，数值差异被压缩，主要看趋势和相对位置")
+        else:
+            st.info("暂无走势数据")
+        
+        st.markdown("---")
+        
+        # 详细数据表
+        st.markdown("### 📋 赛季详细数据")
+        if len(summary_df) > 0:
+            display_df = summary_df.copy()
+            # 映射AI展示名
+            display_df['AI'] = display_df['ai_name'].apply(
+                lambda x: f"{AI_PROFILES.get(x, {}).get('icon', '🤖')} {AI_PROFILES.get(x, {}).get('display_name', x)}"
+            )
+            display_df['增长倍数'] = display_df['roi'].apply(format_growth_multiplier)
+            display_df['胜率'] = display_df['win_rate'].apply(lambda x: f"{x:.2%}")
+            display_df['最大回撤'] = display_df['max_drawdown'].apply(lambda x: f"{x:.2%}")
+            display_df['深度回撤'] = display_df['is_bankrupt'].apply(lambda x: "是" if x else "否")
+            st.dataframe(
+                display_df[['AI', '增长倍数', '胜率', 'total_bets', '最大回撤', '深度回撤']].rename(columns={'total_bets': '出手数'}), 
+                use_container_width=True, hide_index=True
+            )
+            st.caption("增长倍数为全量训练模型的理论计算值，存在未来函数，仅供参考")

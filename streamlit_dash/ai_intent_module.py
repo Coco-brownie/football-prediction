@@ -11,17 +11,51 @@ SCRIPT_PATH = os.path.abspath(__file__)
 ROOT_DIR = os.path.dirname(os.path.dirname(SCRIPT_PATH))
 sys.path.insert(0, ROOT_DIR)
 
-# 三AI配置（与WF回测一致，v1.0.0版本）
-# 注：基于WF赛季重置版验证，只有≥55%+20%安全边际的策略能微赚
-# 三个AI的区别主要是仓位（凯利系数）不同，风险偏好不同
+# 三AI配置（与WF回测一致，v1.0.4版本）
+# 三个AI的核心区别是安全边际（价值筛选）不同，对应不同风险偏好
 AI_CONFIGS = {
-    "激进AI": {"min_confidence": 0.55, "kelly_fraction": 0.90, "require_value": True, "value_margin": 1.2, "icon": "🔥"},
-    "中立AI": {"min_confidence": 0.55, "kelly_fraction": 0.60, "require_value": True, "value_margin": 1.2, "icon": "⚖️"},
-    "保守AI": {"min_confidence": 0.55, "kelly_fraction": 0.20, "require_value": True, "value_margin": 1.2, "icon": "🛡️"},
+    "激进AI": {"min_confidence": 0.55, "kelly_fraction": 0.90, "require_value": True, "value_margin": 1.0, "icon": "🦅"},
+    "中立AI": {"min_confidence": 0.55, "kelly_fraction": 0.60, "require_value": True, "value_margin": 1.1, "icon": "⚖️"},
+    "保守AI": {"min_confidence": 0.55, "kelly_fraction": 0.20, "require_value": True, "value_margin": 1.2, "icon": "🪨"},
+}
+
+# 高级模式配置（超级组合策略👑）
+# 仅对保守AI生效，开启后升级为超级组合策略
+ADVANCED_MODE_CONFIG = {
+    "enabled_ai": "保守AI",  # 哪个AI开启高级模式
+    "icon": "👑",  # 高级模式标记
+    "name_suffix": "Pro",  # 名字后缀
+    # 超级组合策略参数
+    "min_confidence": 0.55,
+    "kelly_fraction": 0.20,
+    "require_value": True,
+    "value_margin": 1.2,
+    # 联赛筛选：只投德甲+意甲
+    "league_filter": ["D1", "SER"],
+    # 平局策略
+    "draw_enabled": True,
+    "draw_min_confidence": 0.50,
+    "draw_kelly_fraction": 0.20,
+    "draw_require_value": True,
+    "draw_value_margin": 1.0,
+    # 置信度打折（磐石最优）
+    "confidence_scaling": True,
 }
 
 
-def calc_ai_bet_intent(pred_confidence, pred_result, odds=None):
+def scale_confidence(conf):
+    """置信度打折（磐石最优：保守三档）"""
+    if conf < 0.6:
+        return conf * 0.98
+    elif conf < 0.8:
+        return conf * 0.95
+    else:
+        return conf * 0.90
+
+
+def calc_ai_bet_intent(pred_confidence, pred_result, odds=None, 
+                       league_code=None, draw_prob=None, draw_odds=None,
+                       advanced_mode=False):
     """
     计算三个AI对单场比赛的出手建议
     
@@ -29,6 +63,10 @@ def calc_ai_bet_intent(pred_confidence, pred_result, odds=None):
         pred_confidence: 模型预测置信度 (0-1)
         pred_result: 预测方向 ('主队胜' / '平局' / '客队胜')
         odds: 对应方向的市场概率（可选，置信度优势判断用）
+        league_code: 联赛代码（高级模式联赛筛选用）
+        draw_prob: 平局概率（高级模式平局策略用）
+        draw_odds: 平局赔率（高级模式平局策略用）
+        advanced_mode: 是否开启高级模式（超级组合策略👑）
     
     返回:
         dict: 每个AI的出手建议 + 共识等级
@@ -39,24 +77,74 @@ def calc_ai_bet_intent(pred_confidence, pred_result, odds=None):
     for ai_name, cfg in AI_CONFIGS.items():
         will_bet = True
         reason = ""
+        icon = cfg["icon"]
+        display_name = ai_name
         
-        # 置信度门槛
-        if pred_confidence < cfg["min_confidence"]:
-            will_bet = False
-            reason = f"置信度不足（需≥{cfg['min_confidence']:.0%}）"
-        
-        # 置信度优势判断（需要市场概率）
-        if will_bet and cfg["require_value"] and odds and odds > 0:
-            implied_prob = 1.0 / odds
-            margin = cfg.get("value_margin", 1.0)
-            if pred_confidence <= implied_prob * margin:
+        # 高级模式：仅对指定AI生效
+        is_advanced_ai = advanced_mode and ai_name == ADVANCED_MODE_CONFIG["enabled_ai"]
+        if is_advanced_ai:
+            icon = ADVANCED_MODE_CONFIG["icon"]
+            display_name = f"{ai_name}{ADVANCED_MODE_CONFIG['name_suffix']}"
+            
+            # 联赛筛选
+            if ADVANCED_MODE_CONFIG.get("league_filter"):
+                if league_code and league_code not in ADVANCED_MODE_CONFIG["league_filter"]:
+                    will_bet = False
+                    reason = "联赛不在精选范围（仅德甲+意甲）"
+            
+            # 置信度打折
+            conf = pred_confidence
+            if ADVANCED_MODE_CONFIG.get("confidence_scaling"):
+                conf = scale_confidence(conf)
+            
+            # 置信度门槛
+            if will_bet and conf < ADVANCED_MODE_CONFIG["min_confidence"]:
                 will_bet = False
-                reason = f"价值不足（需{(margin-1)*100:.0f}%安全边际）"
+                reason = f"置信度不足（需≥{ADVANCED_MODE_CONFIG['min_confidence']:.0%}）"
+            
+            # 置信度优势判断
+            if will_bet and ADVANCED_MODE_CONFIG["require_value"] and odds and odds > 0:
+                implied_prob = 1.0 / odds
+                margin = ADVANCED_MODE_CONFIG.get("value_margin", 1.0)
+                if conf <= implied_prob * margin:
+                    will_bet = False
+                    reason = f"价值不足（需{(margin-1)*100:.0f}%安全边际）"
+            
+            # 平局策略：如果主胜/客胜不出手，看看平局要不要出手
+            if not will_bet and ADVANCED_MODE_CONFIG.get("draw_enabled") and draw_prob and draw_odds:
+                draw_conf = draw_prob
+                # 平局置信度打折？暂时不打
+                draw_pass = draw_conf >= ADVANCED_MODE_CONFIG["draw_min_confidence"]
+                if draw_pass and ADVANCED_MODE_CONFIG["draw_require_value"] and draw_odds > 0:
+                    draw_implied = 1.0 / draw_odds
+                    draw_margin = ADVANCED_MODE_CONFIG.get("draw_value_margin", 1.0)
+                    draw_pass = draw_conf > draw_implied * draw_margin
+                
+                if draw_pass:
+                    will_bet = True
+                    reason = "平局高置信度机会"
+                    # 平局也算出手
+        else:
+            # 普通模式
+            # 置信度门槛
+            if pred_confidence < cfg["min_confidence"]:
+                will_bet = False
+                reason = f"置信度不足（需≥{cfg['min_confidence']:.0%}）"
+            
+            # 置信度优势判断（需要市场概率）
+            if will_bet and cfg["require_value"] and odds and odds > 0:
+                implied_prob = 1.0 / odds
+                margin = cfg.get("value_margin", 1.0)
+                if pred_confidence <= implied_prob * margin:
+                    will_bet = False
+                    reason = f"价值不足（需{(margin-1)*100:.0f}%安全边际）"
         
         intents[ai_name] = {
             "will_bet": will_bet,
             "reason": reason,
-            "icon": cfg["icon"],
+            "icon": icon,
+            "display_name": display_name,
+            "is_advanced": is_advanced_ai,
         }
         if will_bet:
             bet_count += 1
@@ -70,7 +158,16 @@ def calc_ai_bet_intent(pred_confidence, pred_result, odds=None):
         consensus_label = "👥 两AI看好"
     elif bet_count == 1:
         consensus_level = "low"
-        consensus_label = "🔥 仅激进关注"
+        # 看看是不是只有高级AI出手
+        advanced_only = False
+        for ai_name, info in intents.items():
+            if info["will_bet"] and info["is_advanced"]:
+                advanced_only = True
+                break
+        if advanced_only and advanced_mode:
+            consensus_label = "👑 仅Pro关注"
+        else:
+            consensus_label = "🔥 仅激进关注"
     else:
         consensus_level = "none"
         consensus_label = "❌ 无AI出手"
@@ -80,6 +177,7 @@ def calc_ai_bet_intent(pred_confidence, pred_result, odds=None):
         "bet_count": bet_count,
         "consensus_level": consensus_level,
         "consensus_label": consensus_label,
+        "advanced_mode": advanced_mode,
     }
 
 
@@ -88,5 +186,6 @@ def format_intent_badges(intent_result):
     badges = []
     for ai_name, info in intent_result["intents"].items():
         status = "✅" if info["will_bet"] else "❌"
-        badges.append(f"{info['icon']} {status} {ai_name}")
+        name = info.get("display_name", ai_name)
+        badges.append(f"{info['icon']} {status} {name}")
     return badges

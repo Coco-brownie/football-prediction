@@ -11,7 +11,8 @@ ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(ROOT_PATH, "model")
 
 
-# 【2026-07-29 特征泄露修复版：去掉shot_on_diff，52维】
+# 【2026-07-29 特征泄露修复版：去掉shot_on_diff，52维（含ELO+时间衰减）】
+# 特征顺序：基础→ELO直接→ELO扩展→时间衰减→联赛独热（与训练时完全一致）
 FEATURE_COLS = [
     "h5_gf","h5_ga","h5_shot","h5_shot_ot",
     "h10_gf","h10_ga",
@@ -21,12 +22,16 @@ FEATURE_COLS = [
     "h2h_cnt", "h2h_home_win_rate", "h2h_draw_rate", "h2h_home_gf_avg", "h2h_home_ga_avg",
     "prob_ratio_ha", "prob_draw_share", "prob_max", "prob_entropy", "prob_home_favorite",
     "home_draw_rate_5", "home_draw_rate_10", "away_draw_rate_5", "away_draw_rate_10",
-    "league_SER","league_E0","league_D1","league_LIG","league_LLA",
     "home_elo_before", "away_elo_before", "elo_diff_before",
     "h5_gf_elo_weighted", "h5_ga_elo_weighted",
     "a5_gf_elo_weighted", "a5_ga_elo_weighted",
     "home_w5_elo_trend", "home_w10_elo_trend",
     "away_w5_elo_trend", "away_w10_elo_trend",
+    "h5_gf_time_decay", "h5_ga_time_decay",
+    "a5_gf_time_decay", "a5_ga_time_decay",
+    "h10_gf_time_decay", "h10_ga_time_decay",
+    "a10_gf_time_decay", "a10_ga_time_decay",
+    "league_SER","league_E0","league_D1","league_LIG","league_LLA",
 ]
 
 # 泊松模型特征（13维，去掉shot_on_diff）
@@ -37,7 +42,7 @@ POISSON_FEATURES = [
 ]
 # 硬编码索引（与训练时GOAL_FEATURES严格对齐），避免FEATURE_COLS变化导致错位
 # 顺序：h5_gf, h5_ga, a5_gf, a5_ga, h10_gf, h10_ga, a10_gf, a10_ga, league_*5
-POISSON_FEAT_IDX = [0, 1, 6, 7, 4, 5, 10, 11, 28, 29, 30, 31, 32]
+POISSON_FEAT_IDX = [0, 1, 6, 7, 4, 5, 10, 11, 47, 48, 49, 50, 51]
 
 # 融合权重：LGB 55% + 泊松 30% + 平局专项 5%（网格搜索OOS最优保守方案）
 FUSION_WEIGHT_LGB = 0.55

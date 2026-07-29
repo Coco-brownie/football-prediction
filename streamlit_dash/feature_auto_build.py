@@ -230,6 +230,56 @@ def calc_h2h_stats(df_filter, home_team, away_team):
         round(home_ga_total / cnt, 4)
     )
 
+def calc_decay_weight(n_games_ago, half_life=10):
+    """计算指数衰减权重"""
+    import numpy as np
+    k = np.log(2) / half_life
+    return np.exp(-k * n_games_ago)
+
+
+def get_team_time_decay_stats(df_full, team, n=5):
+    """计算球队近n场的时间衰减加权进球/失球"""
+    home_col = "home_team_std" if "home_team_std" in df_full.columns else "home_team"
+    away_col = "away_team_std" if "away_team_std" in df_full.columns else "away_team"
+    
+    # 找到这支球队的所有比赛，按日期倒序
+    team_matches = df_full[
+        (df_full[home_col] == team) | (df_full[away_col] == team)
+    ].sort_values("match_date", ascending=False)
+    
+    if len(team_matches) == 0:
+        return 1.5, 1.5  # 默认值
+    
+    # 取最近n场
+    recent = team_matches.head(n)
+    
+    # 计算每一场的进球和失球
+    goals_for = []
+    goals_against = []
+    for _, row in recent.iterrows():
+        if row[home_col] == team:
+            # 主队
+            goals_for.append(row["home_goals"])
+            goals_against.append(row["away_goals"])
+        else:
+            # 客队
+            goals_for.append(row["away_goals"])
+            goals_against.append(row["home_goals"])
+    
+    # 计算时间衰减权重（越近权重越大）
+    m = len(goals_for)
+    weights = [calc_decay_weight(m - 1 - i) for i in range(m)]
+    total_w = sum(weights)
+    
+    if total_w == 0:
+        return 1.5, 1.5
+    
+    avg_gf = sum(g * w for g, w in zip(goals_for, weights)) / total_w
+    avg_ga = sum(g * w for g, w in zip(goals_against, weights)) / total_w
+    
+    return avg_gf, avg_ga
+
+
 def build_feature_by_teams(df_full, home_team, away_team, draw_odds, away_odds, league_code,
                            use_value_features=False, league_cfg_code=None):
     """
@@ -310,6 +360,14 @@ def build_feature_by_teams(df_full, home_team, away_team, draw_odds, away_odds, 
     away_w10_trend = get_team_elo_trend(away_team, league_code, 10)
     result += [h5_gf_w, h5_ga_w, a5_gf_w, a5_ga_w,
                home_w5_trend, home_w10_trend, away_w5_trend, away_w10_trend]
+    
+    # 时间衰减特征（8维：近5场+近10场，主队+客队，进球+失球）
+    h5_gf_td, h5_ga_td = get_team_time_decay_stats(df_full, home_team, 5)
+    h10_gf_td, h10_ga_td = get_team_time_decay_stats(df_full, home_team, 10)
+    a5_gf_td, a5_ga_td = get_team_time_decay_stats(df_full, away_team, 5)
+    a10_gf_td, a10_ga_td = get_team_time_decay_stats(df_full, away_team, 10)
+    result += [h5_gf_td, h5_ga_td, a5_gf_td, a5_ga_td,
+               h10_gf_td, h10_ga_td, a10_gf_td, a10_ga_td]
 
     # 可选：追加身价特征（5维）
     if use_value_features and league_cfg_code:

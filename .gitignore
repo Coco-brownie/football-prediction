@@ -48,14 +48,30 @@ config.json
 feature_desc.md
 league_scaler.pkl
 
+# 数据库文件（太大，不上云端）
+*.db
+
 # 破产研究中间文件（本地保留，不提交）
 wf_bankrupt_*.md
 wf_bankrupt_study.py
 _check_*.py
 _test_*.py
 
-# 数据库备份
-*_backup_*.db
+# 策略研究脚本（本地保留，不提交）
+strategy_*.py
+panshi_*.py
+bundesliga_*.py
+min_bets_*.py
+draw_combo_*.py
+monte_carlo_*.py
+random_baseline_*.py
+confidence_calibration_*.py
+full_strategy_*.py
+aggressive_*.py
+expected_return_*.py
+overfitting_*.py
+*_analysis.py
+*_test.py
 
 # 旧模型与联赛独立模型
 model/*class_weight*
@@ -65,4 +81,7 @@ model/league_*
 model/*timesplit*
 
 # streamlit目录下的测试db
-streamlit_dash/football.db
+# streamlit_dash/football.db  # 现在改为保留，因为看板需要
+
+# 本地研究文档（不提交）
+策略研究结论.md
