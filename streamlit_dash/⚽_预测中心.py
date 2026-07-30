@@ -179,6 +179,24 @@ with tab_calendar:
         
         st.info(f"📅 未来 {days_ahead} 天共 {len(df_upcoming)} 场五大联赛赛事")
         
+        # 猎鹰Plus版选择（冷门猎手专精）
+        col_f1, col_f2 = st.columns([1, 3])
+        with col_f1:
+            falcon_plus_options = ["关闭", "基础版", "德甲专精", "英超专精"]
+            falcon_plus_version = st.selectbox(
+                "🦅 猎鹰Plus版",
+                options=falcon_plus_options,
+                index=0,
+                help="冷门猎手专精：基础版全联赛，德甲专精ROI 60%+，英超专精ROI +27%"
+            )
+        with col_f2:
+            if falcon_plus_version != "关闭":
+                from ai_intent_module import FALCON_PLUS_CONFIG
+                desc = FALCON_PLUS_CONFIG.get(falcon_plus_version, {}).get("desc", "")
+                st.caption(f"✅ 已开启猎鹰·{falcon_plus_version}：{desc}")
+            else:
+                st.caption("💡 猎鹰Plus版：冷门猎手专精，高赔率+高置信度策略")
+
         if st.button("🔍 批量计算三AI参考", type="primary", key="calc_ai_view"):
             if len(df_upcoming) == 0:
                 st.warning("暂无符合条件的赛事")
@@ -213,7 +231,8 @@ with tab_calendar:
                             league_code=league,
                             draw_prob=pred.get("prob_draw", 0),
                             draw_odds=None,  # 暂无真实平局赔率
-                            advanced_mode=False
+                            advanced_mode=False,
+                            falcon_plus_version=None if falcon_plus_version == "关闭" else falcon_plus_version
                         )
                         
                         # 获取显示名称
@@ -505,17 +524,40 @@ with tab_track:
             st.dataframe(df_show, use_container_width=True, hide_index=True)
 
 # 底部更新日志（默认折叠，不占空间）
-APP_VERSION = "v1.0.4"
+APP_VERSION = "v1.0.8"
 st.divider()
 
 # 免责声明
 st.warning("""
 **⚠️ 免责声明：本系统仅供机器学习研究与模型验证使用，所有预测结果均为模型算法输出，不构成任何决策建议。严禁用于其他用途。**
-历史数据来自 [football-data.co.uk](https://www.football-data.co.uk/)，模型为自研 LightGBM 三分类。
+历史数据来自 [football-data.co.uk](https://www.football-data.co.uk/)。
 """)
 
 with st.expander(f"📝 更新日志 · {APP_VERSION} 🆕", expanded=False):
     st.markdown("""
+**v1.0.8 — 2026-07-30（猎鹰Plus版）**
+- 猎鹰策略新增双Pro模式：德甲专精/英超专精
+- 模型验证页集成Pro版开关，互斥切换
+- 策略研究结论全文复核整理
+
+**v1.0.7 — 2026-07-30（猎鹰策略深度优化）**
+- 猎鹰策略重新定位：从"最低置信度"到「冷门猎手」
+- 二维网格搜索：赔率×置信度35组参数全面测试
+- 德甲专精版固定ROI +60.69%，盈利赛季83.3%
+- 热门×置信度2×2矩阵验证，确认冷门+高置信有正alpha
+
+**v1.0.6 — 2026-07-30（置信度完美校准）**
+- 时间序列交叉验证+Platt缩放，置信度完美校准
+- ECE（期望校准误差）0.92%，几乎完美
+- 置信度偏差从+4.05%降到-0.00%
+- 凯利动态仓位从此可信
+
+**v1.0.5 — 2026-07-30（冷门猎手发现）**
+- 发现置信度虚高问题，高置信度区间虚高7-10%
+- 发现冷门猎手现象：高赔率+高置信度=正收益
+- 反直觉：热门策略跑输市场，冷门策略正收益
+- 开始深入研究猎鹰策略优化方向
+
 **v1.0.4 — 2026-07-29（高级模式·超级组合）**
 - 👑 新增高级模式，磐石策略升级为超级组合策略
 - 🚀 赛季ROI从+0.9%提升至+22.6%

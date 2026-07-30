@@ -1,87 +1,74 @@
-# ========== 全部排除，再单独包含需要的 ==========
+# ========== Python 缓存 ==========
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 
-# Git安装目录（误提交，必须忽略）
-/Git/
-
-# 排除所有根目录py文件（除了指定的几个）
+# ========== 根目录py文件（只保留核心两个） ==========
 /*.py
 !/match_predict.py
 !/team_mapping_v2.py
 
-# 开发脚本与归档
-_dev_scripts/
-_full_backup_*/
-exe_package/
-model/_deprecated/
-model_backup_*/
-archive/
+# ========== IDE 配置 ==========
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# 原始数据
+# ========== 操作系统文件 ==========
+.DS_Store
+Thumbs.db
+
+# ========== 数据库文件（太大，不上传） ==========
+*.db
+*.sqlite
+*.sqlite3
+
+# ========== 原始数据（太大，不上传） ==========
 csv_data/
 footballmatchdate/
 matchdate2009-2026/
 update_input/
 
-# 日志与缓存
-logs/
-__pycache__/
-*.pyc
-*.pyo
-.vscode/
-.idea/
+# ========== 归档与废弃文件 ==========
+archive/
+_dev_scripts/
+_full_backup_*/
+exe_package/
+model/_deprecated/
+model_backup_*/
+【临时测试_待确认删除】/
+【策略研究】/
+【文档】/
 
-# 本地启动脚本
-*.bat
-*.lnk
+# ========== 临时文件 ==========
+*.tmp
+*.log
+*.bak
+*.old
 
-# 本地配置
-定时任务配置说明.md
+# ========== 本地配置 ==========
 config.json
-*.json
+定时任务配置说明.md
+
+# 模型配置文件保留
 !model/poisson_features.json
 !model/poisson_model_params.json
 
-# 临时文件
-*.tmp
-*.log
-*.csv
-feature_desc.md
-league_scaler.pkl
+# ========== 本地启动脚本 ==========
+*.bat
+*.lnk
 
-# 数据库文件（太大，不上云端）
-*.db
+# ========== Git 安装目录（误提交，必须忽略） ==========
+/Git/
 
-# 破产研究中间文件（本地保留，不提交）
-wf_bankrupt_*.md
-wf_bankrupt_study.py
-_check_*.py
-_test_*.py
-
-# 策略研究脚本（本地保留，不提交）
-strategy_*.py
-panshi_*.py
-bundesliga_*.py
-min_bets_*.py
-draw_combo_*.py
-monte_carlo_*.py
-random_baseline_*.py
-confidence_calibration_*.py
-full_strategy_*.py
-aggressive_*.py
-expected_return_*.py
-overfitting_*.py
-*_analysis.py
-*_test.py
-
-# 旧模型与联赛独立模型
-model/*class_weight*
-model/*feat_import*
-model/lgb_*
-model/league_*
-model/*timesplit*
-
-# streamlit目录下的测试db
-# streamlit_dash/football.db  # 现在改为保留，因为看板需要
-
-# 本地研究文档（不提交）
-策略研究结论.md
+# ========== 说明 ==========
+# 以下内容全部上传：
+# - 核心Python模块（根目录 + common/ + streamlit_dash/）
+# - model/ 模型文件（核心产物）
+# - requirements.txt / README.md 等项目文件
+#
+# 以下内容不上传：
+# - 【策略研究】/ 研究脚本和结果（本地保留即可）
+# - 【文档】/ 研究文档（本地保留即可）
+# - 数据库、原始数据、缓存、临时文件

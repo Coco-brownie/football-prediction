@@ -90,36 +90,72 @@ def _predict_poisson_goals(X_poi, is_home=True):
 # 【2026-07-29 修复：平局二分类模型改用LightGBM原生格式，解决pickle兼容性】
 draw_binary_model = lgb.Booster(model_file=os.path.join(MODEL_DIR, "draw_binary_model.txt"))
 
-# 【2026-07-26 新增：Platt概率校准器】
+# 【2026-07-30 新增：置信度校准器（验证集训练，无泄露）】
 _calibrator = None
 def _get_calibrator():
     global _calibrator
     if _calibrator is None:
-        cal_path = os.path.join(MODEL_DIR, "platt_calibrator_home.pkl")
+        # 优先用新的置信度校准器
+        cal_path = os.path.join(MODEL_DIR, "confidence_calibrator.pkl")
         if os.path.exists(cal_path):
             with open(cal_path, "rb") as f:
                 _calibrator = pickle.load(f)
+        else:
+            # 兼容旧版
+            old_cal_path = os.path.join(MODEL_DIR, "platt_calibrator_home.pkl")
+            if os.path.exists(old_cal_path):
+                with open(old_cal_path, "rb") as f:
+                    _calibrator = pickle.load(f)
     return _calibrator
 
 
 def apply_probability_calibration(probs):
-    """应用Platt概率校准
+    """应用置信度校准
     输入：shape=(n, 3)的概率数组 [主胜, 平局, 客胜]
     输出：校准后的概率
+    校准方式：直接校准最大概率（置信度），其余概率按原始比例缩放
     """
     cal = _get_calibrator()
     if cal is None:
         return probs  # 校准器不存在则返回原值
     
-    cal_probs = np.zeros_like(probs)
-    for i in range(3):
-        cal_probs[:, i] = cal[i].predict_proba(probs[:, i].reshape(-1, 1))[:, 1]
-    # 归一化
-    row_sums = cal_probs.sum(axis=1, keepdims=True)
-    # 防止除零
-    row_sums = np.where(row_sums == 0, 1, row_sums)
-    cal_probs = cal_probs / row_sums
-    return cal_probs
+    # 判断是新校准器（单个LogisticRegression）还是旧校准器（三个的列表）
+    if isinstance(cal, list):
+        # 旧版One-vs-Rest校准（兼容）
+        cal_probs = np.zeros_like(probs)
+        for i in range(3):
+            cal_probs[:, i] = cal[i].predict_proba(probs[:, i].reshape(-1, 1))[:, 1]
+        row_sums = cal_probs.sum(axis=1, keepdims=True)
+        row_sums = np.where(row_sums == 0, 1, row_sums)
+        cal_probs = cal_probs / row_sums
+        return cal_probs
+    else:
+        # 新版：直接校准置信度（max_prob）
+        cal_probs = np.zeros_like(probs)
+        
+        for i in range(len(probs)):
+            p = probs[i]
+            max_idx = np.argmax(p)
+            max_prob = p[max_idx]
+            
+            # 校准最大概率
+            calibrated_max = cal.predict_proba(np.array([[max_prob]]))[0, 1]
+            
+            # 其余概率按比例缩放
+            remaining = 1.0 - calibrated_max
+            other_sum = p.sum() - max_prob
+            
+            if other_sum > 0:
+                scale = remaining / other_sum
+                for j in range(3):
+                    if j == max_idx:
+                        cal_probs[i, j] = calibrated_max
+                    else:
+                        cal_probs[i, j] = p[j] * scale
+            else:
+                cal_probs[i] = p
+        
+        return cal_probs
 
 
 def calc_score_matrix(h_lam, a_lam, max_goals=8):

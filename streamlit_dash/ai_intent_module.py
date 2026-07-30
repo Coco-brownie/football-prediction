@@ -11,12 +11,38 @@ SCRIPT_PATH = os.path.abspath(__file__)
 ROOT_DIR = os.path.dirname(os.path.dirname(SCRIPT_PATH))
 sys.path.insert(0, ROOT_DIR)
 
-# 三AI配置（与WF回测一致，v1.0.4版本）
-# 三个AI的核心区别是安全边际（价值筛选）不同，对应不同风险偏好
+# 三AI配置（与WF回测一致，v1.0.7版本）
+# 三个AI的核心区别是定位不同：磐石求稳、天秤均衡、猎鹰求利（冷门猎手）
 AI_CONFIGS = {
-    "激进AI": {"min_confidence": 0.55, "kelly_fraction": 0.90, "require_value": True, "value_margin": 1.0, "icon": "🦅"},
-    "中立AI": {"min_confidence": 0.55, "kelly_fraction": 0.60, "require_value": True, "value_margin": 1.1, "icon": "⚖️"},
-    "保守AI": {"min_confidence": 0.55, "kelly_fraction": 0.20, "require_value": True, "value_margin": 1.2, "icon": "🪨"},
+    "激进AI": {"min_confidence": 0.55, "kelly_fraction": 0.90, "require_value": True, "value_margin": 1.0, "icon": "🦅", "name": "猎鹰"},
+    "中立AI": {"min_confidence": 0.55, "kelly_fraction": 0.60, "require_value": True, "value_margin": 1.1, "icon": "⚖️", "name": "天秤"},
+    "保守AI": {"min_confidence": 0.55, "kelly_fraction": 0.20, "require_value": True, "value_margin": 1.2, "icon": "🪨", "name": "磐石"},
+}
+
+# 猎鹰Plus版配置（冷门猎手专精）
+# 三个版本：基础版（全联赛）、德甲专精、英超专精
+FALCON_PLUS_CONFIG = {
+    "基础版": {
+        "min_confidence": 0.55,
+        "min_odds": 2.5,
+        "league_filter": None,
+        "icon": "🦅",
+        "desc": "全联赛通用，赔率≥2.5+置信≥55%",
+    },
+    "德甲专精": {
+        "min_confidence": 0.50,
+        "min_odds": 2.5,
+        "league_filter": ["D1"],
+        "icon": "🇩🇪",
+        "desc": "仅德甲，赔率≥2.5+置信≥50%，ROI 60%+",
+    },
+    "英超专精": {
+        "min_confidence": 0.50,
+        "min_odds": 3.0,
+        "league_filter": ["E0"],
+        "icon": "🏴",
+        "desc": "仅英超，赔率≥3.0+置信≥50%，ROI +27%",
+    },
 }
 
 # 高级模式配置（超级组合策略👑）
@@ -55,7 +81,7 @@ def scale_confidence(conf):
 
 def calc_ai_bet_intent(pred_confidence, pred_result, odds=None, 
                        league_code=None, draw_prob=None, draw_odds=None,
-                       advanced_mode=False):
+                       advanced_mode=False, falcon_plus_version=None):
     """
     计算三个AI对单场比赛的出手建议
     
@@ -67,6 +93,7 @@ def calc_ai_bet_intent(pred_confidence, pred_result, odds=None,
         draw_prob: 平局概率（高级模式平局策略用）
         draw_odds: 平局赔率（高级模式平局策略用）
         advanced_mode: 是否开启高级模式（超级组合策略👑）
+        falcon_plus_version: 猎鹰Plus版版本（None=关闭，'基础版'/'德甲专精'/'英超专精'）
     
     返回:
         dict: 每个AI的出手建议 + 共识等级
@@ -79,10 +106,40 @@ def calc_ai_bet_intent(pred_confidence, pred_result, odds=None,
         reason = ""
         icon = cfg["icon"]
         display_name = ai_name
+        is_advanced = False
         
+        # 猎鹰Plus版：仅对激进AI生效
+        is_falcon_plus = falcon_plus_version and ai_name == "激进AI"
+        if is_falcon_plus:
+            plus_cfg = FALCON_PLUS_CONFIG.get(falcon_plus_version, {})
+            icon = plus_cfg.get("icon", cfg["icon"])
+            display_name = f"猎鹰·{falcon_plus_version}"
+            
+            # 联赛筛选
+            if plus_cfg.get("league_filter"):
+                if league_code and league_code not in plus_cfg["league_filter"]:
+                    will_bet = False
+                    reason = "联赛不在专精范围"
+            
+            # 赔率下限筛选（冷门猎手核心：只买高赔率）
+            if will_bet and plus_cfg.get("min_odds") and odds and odds > 0:
+                if odds < plus_cfg["min_odds"]:
+                    will_bet = False
+                    reason = f"赔率不足（需≥{plus_cfg['min_odds']}）"
+            
+            # 置信度门槛
+            if will_bet:
+                min_conf = plus_cfg.get("min_confidence", cfg["min_confidence"])
+                if pred_confidence < min_conf:
+                    will_bet = False
+                    reason = f"置信度不足（需≥{min_conf:.0%}）"
+            
+            # 冷门猎手不需要安全边际（高赔率+高置信度天然就有）
+            # 所以跳过value_margin检查
+            
         # 高级模式：仅对指定AI生效
-        is_advanced_ai = advanced_mode and ai_name == ADVANCED_MODE_CONFIG["enabled_ai"]
-        if is_advanced_ai:
+        elif advanced_mode and ai_name == ADVANCED_MODE_CONFIG["enabled_ai"]:
+            is_advanced = True
             icon = ADVANCED_MODE_CONFIG["icon"]
             display_name = f"{ai_name}{ADVANCED_MODE_CONFIG['name_suffix']}"
             
@@ -144,7 +201,8 @@ def calc_ai_bet_intent(pred_confidence, pred_result, odds=None,
             "reason": reason,
             "icon": icon,
             "display_name": display_name,
-            "is_advanced": is_advanced_ai,
+            "is_advanced": is_advanced,
+            "is_falcon_plus": is_falcon_plus,
         }
         if will_bet:
             bet_count += 1
@@ -158,6 +216,14 @@ def calc_ai_bet_intent(pred_confidence, pred_result, odds=None,
         consensus_label = "👥 两AI看好"
     elif bet_count == 1:
         consensus_level = "low"
+        # 看看是不是只有猎鹰Plus出手
+        falcon_plus_only = False
+        for ai_name, info in intents.items():
+            if info["will_bet"] and info.get("is_falcon_plus"):
+                falcon_plus_only = True
+                break
+        if falcon_plus_only and falcon_plus_version:
+            consensus_label = f"🦅 仅猎鹰·{falcon_plus_version}"
         # 看看是不是只有高级AI出手
         advanced_only = False
         for ai_name, info in intents.items():
@@ -166,7 +232,7 @@ def calc_ai_bet_intent(pred_confidence, pred_result, odds=None,
                 break
         if advanced_only and advanced_mode:
             consensus_label = "👑 仅Pro关注"
-        else:
+        elif not falcon_plus_only:
             consensus_label = "🔥 仅激进关注"
     else:
         consensus_level = "none"
@@ -178,6 +244,7 @@ def calc_ai_bet_intent(pred_confidence, pred_result, odds=None,
         "consensus_level": consensus_level,
         "consensus_label": consensus_label,
         "advanced_mode": advanced_mode,
+        "falcon_plus_version": falcon_plus_version,
     }
 
 

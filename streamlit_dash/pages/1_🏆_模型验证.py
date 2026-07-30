@@ -586,55 +586,205 @@ else:
                 st.caption("💡 安全边际偏低，价值筛选不足，有待优化")
             
             elif ai_name == '激进AI':
-                # 🦅 猎鹰#A01（攻击型）
-                st.markdown(f"""
-                <div style="background: linear-gradient(135deg, {profile['color']}15, {profile['color']}05); 
-                            border: 2px solid {profile['color']}40; border-radius: 12px; padding: 16px; margin-bottom: 10px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <span style="font-size: 22px; font-weight: bold;">{profile['icon']} {profile['display_name']}</span>
-                        <span style="font-size: 11px; padding: 3px 8px; background: #e74c3c20; 
-                              color: #e74c3c; border-radius: 10px; font-weight: bold;">
-                            ⚠️ 待优化
-                        </span>
-                    </div>
-                    <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 10px;">
-                        {profile['style_tag']} · {profile['personality']}
-                    </div>
-                    <div style="font-size: 13px; color: #666; margin-bottom: 12px; font-style: italic;">
-                        "{profile['style_desc']}"
-                    </div>
-                    <div style="background: {profile['color']}10; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
-                        <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 6px;">
-                            ⚡ {profile['skill_name']}
-                        </div>
-                        <div style="font-size: 12px; color: #555; line-height: 1.5;">
-                            {profile['skill_desc']}
-                        </div>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
-                        <div>
-                            <div style="color: #888; font-size: 11px;">胜率</div>
-                            <div style="font-weight: bold; color: #333; font-size: 14px;">63.3%</div>
-                        </div>
-                        <div>
-                            <div style="color: #888; font-size: 11px;">回撤</div>
-                            <div style="font-weight: bold; color: #e74c3c; font-size: 14px;">79.6%</div>
-                        </div>
-                        <div>
-                            <div style="color: #888; font-size: 11px;">出手</div>
-                            <div style="font-weight: bold; color: #333; font-size: 14px;">739场</div>
-                        </div>
-                    </div>
-                    <div style="text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #eee;">
-                        <span style="font-size: 13px; font-weight: bold; color: #e74c3c;">
-                            赛季ROI：-64.1% ⚠️
-                        </span>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                # 🦅 猎鹰#A01（攻击型）— 支持德甲专精/英超专精双Pro模式（互斥）
+                # 初始化session_state（全局开关，其他页面可读取）
+                if 'falcon_bundesliga_mode' not in st.session_state:
+                    st.session_state['falcon_bundesliga_mode'] = False
+                if 'falcon_epl_mode' not in st.session_state:
+                    st.session_state['falcon_epl_mode'] = False
                 
-                st.caption(f"📊 参数：{profile['params']}")
-                st.caption("💡 无安全边际，出手太多质量差，亏损严重")
+                bundesliga_mode = st.session_state['falcon_bundesliga_mode']
+                epl_mode = st.session_state['falcon_epl_mode']
+                
+                # 互斥逻辑：同时开启时优先保留德甲专精（表现更好），自动关闭英超专精
+                if bundesliga_mode and epl_mode:
+                    st.session_state['falcon_epl_mode'] = False
+                    epl_mode = False
+                
+                if bundesliga_mode:
+                    # 🇩🇪 德甲专精版（Pro）
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #f39c1225, #f39c1208); 
+                                border: 2px solid #f39c1260; border-radius: 12px; padding: 16px; margin-bottom: 10px;
+                                box-shadow: 0 4px 12px #f39c1220;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <span style="font-size: 22px; font-weight: bold;">👑 猎鹰#A01 Pro</span>
+                            <span style="font-size: 11px; padding: 3px 8px; background: #f39c1230; 
+                                  color: #f39c12; border-radius: 10px; font-weight: bold;">
+                                德甲专精
+                            </span>
+                        </div>
+                        <div style="font-size: 12px; color: #f39c12; font-weight: bold; margin-bottom: 10px;">
+                            冷门猎手 · 德甲专精 · 收益天花板
+                        </div>
+                        <div style="font-size: 13px; color: #666; margin-bottom: 12px; font-style: italic;">
+                            "专门找德甲高赔率但模型很有把握的比赛"
+                        </div>
+                        <div style="background: #f39c1215; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+                            <div style="font-size: 12px; color: #f39c12; font-weight: bold; margin-bottom: 6px;">
+                                ⚡ 【冷门猎手】
+                            </div>
+                            <div style="font-size: 12px; color: #555; line-height: 1.5;">
+                                高赔率+高置信度，市场低估的冷门机会，信息不对称带来超额收益
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
+                            <div>
+                                <div style="color: #888; font-size: 11px;">胜率</div>
+                                <div style="font-weight: bold; color: #27ae60; font-size: 14px;">53.8%</div>
+                            </div>
+                            <div>
+                                <div style="color: #888; font-size: 11px;">平均赔率</div>
+                                <div style="font-weight: bold; color: #333; font-size: 14px;">2.95</div>
+                            </div>
+                            <div>
+                                <div style="color: #888; font-size: 11px;">赛季均</div>
+                                <div style="font-weight: bold; color: #333; font-size: 14px;">4.3场</div>
+                            </div>
+                        </div>
+                        <div style="text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #eee;">
+                            <span style="font-size: 13px; font-weight: bold; color: #f39c12;">
+                                固定ROI：+60.69% 👑
+                            </span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.caption("📊 参数：仅德甲 · 赔率≥2.5 · 置信度≥50% · 无最低出手限制")
+                    
+                    # 两个Pro版开关（互斥）
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.toggle("德甲专精", value=bundesliga_mode, key='falcon_bundesliga_mode',
+                                  help="开启后启用德甲专精策略：仅德甲，赔率≥2.5，置信≥50%")
+                    with col2:
+                        st.toggle("英超专精", value=epl_mode, key='falcon_epl_mode',
+                                  help="开启后启用英超专精策略：仅英超，赔率≥3.0，置信≥50%")
+                    
+                    st.caption("💡 盈利赛季占比：83.3% · 6个赛季中5个盈利")
+                
+                elif epl_mode:
+                    # 🏴 英超专精版（Pro）
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #3498db25, #3498db08); 
+                                border: 2px solid #3498db60; border-radius: 12px; padding: 16px; margin-bottom: 10px;
+                                box-shadow: 0 4px 12px #3498db20;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <span style="font-size: 22px; font-weight: bold;">👑 猎鹰#A01 Pro</span>
+                            <span style="font-size: 11px; padding: 3px 8px; background: #3498db30; 
+                                  color: #3498db; border-radius: 10px; font-weight: bold;">
+                                英超专精
+                            </span>
+                        </div>
+                        <div style="font-size: 12px; color: #3498db; font-weight: bold; margin-bottom: 10px;">
+                            冷门猎手 · 英超专精 · 稳健备选
+                        </div>
+                        <div style="font-size: 13px; color: #666; margin-bottom: 12px; font-style: italic;">
+                            "英超冷门更多机会也更多，适合作为德甲专精的补充"
+                        </div>
+                        <div style="background: #3498db15; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+                            <div style="font-size: 12px; color: #3498db; font-weight: bold; margin-bottom: 6px;">
+                                ⚡ 【冷门猎手】
+                            </div>
+                            <div style="font-size: 12px; color: #555; line-height: 1.5;">
+                                高赔率+高置信度，专门捕捉英超被市场低估的冷门比赛
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
+                            <div>
+                                <div style="color: #888; font-size: 11px;">胜率</div>
+                                <div style="font-weight: bold; color: #27ae60; font-size: 14px;">36.7%</div>
+                            </div>
+                            <div>
+                                <div style="color: #888; font-size: 11px;">平均赔率</div>
+                                <div style="font-weight: bold; color: #333; font-size: 14px;">3.50</div>
+                            </div>
+                            <div>
+                                <div style="color: #888; font-size: 11px;">赛季均</div>
+                                <div style="font-weight: bold; color: #333; font-size: 14px;">2.7场</div>
+                            </div>
+                        </div>
+                        <div style="text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #eee;">
+                            <span style="font-size: 13px; font-weight: bold; color: #3498db;">
+                                固定ROI：+27.67% ✅
+                            </span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.caption("📊 参数：仅英超 · 赔率≥3.0 · 置信度≥50% · 无最低出手限制")
+                    
+                    # 两个Pro版开关（互斥）
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.toggle("德甲专精", value=bundesliga_mode, key='falcon_bundesliga_mode',
+                                  help="开启后启用德甲专精策略：仅德甲，赔率≥2.5，置信≥50%")
+                    with col2:
+                        st.toggle("英超专精", value=epl_mode, key='falcon_epl_mode',
+                                  help="开启后启用英超专精策略：仅英超，赔率≥3.0，置信≥50%")
+                    
+                    st.caption("💡 盈利赛季占比：54.5% · 11个赛季中6个盈利")
+                
+                else:
+                    # 🦅 普通版猎鹰#A01（攻击型）
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, {profile['color']}15, {profile['color']}05); 
+                                border: 2px solid {profile['color']}40; border-radius: 12px; padding: 16px; margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <span style="font-size: 22px; font-weight: bold;">{profile['icon']} {profile['display_name']}</span>
+                            <span style="font-size: 11px; padding: 3px 8px; background: #e74c3c20; 
+                                  color: #e74c3c; border-radius: 10px; font-weight: bold;">
+                                ⚠️ 待优化
+                            </span>
+                        </div>
+                        <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 10px;">
+                            {profile['style_tag']} · {profile['personality']}
+                        </div>
+                        <div style="font-size: 13px; color: #666; margin-bottom: 12px; font-style: italic;">
+                            "{profile['style_desc']}"
+                        </div>
+                        <div style="background: {profile['color']}10; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+                            <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 6px;">
+                                ⚡ {profile['skill_name']}
+                            </div>
+                            <div style="font-size: 12px; color: #555; line-height: 1.5;">
+                                {profile['skill_desc']}
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
+                            <div>
+                                <div style="color: #888; font-size: 11px;">胜率</div>
+                                <div style="font-weight: bold; color: #333; font-size: 14px;">63.3%</div>
+                            </div>
+                            <div>
+                                <div style="color: #888; font-size: 11px;">回撤</div>
+                                <div style="font-weight: bold; color: #e74c3c; font-size: 14px;">79.6%</div>
+                            </div>
+                            <div>
+                                <div style="color: #888; font-size: 11px;">出手</div>
+                                <div style="font-weight: bold; color: #333; font-size: 14px;">739场</div>
+                            </div>
+                        </div>
+                        <div style="text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #eee;">
+                            <span style="font-size: 13px; font-weight: bold; color: #e74c3c;">
+                                赛季ROI：-64.1% ⚠️
+                            </span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.caption(f"📊 参数：{profile['params']}")
+                    
+                    # 两个Pro版开关（互斥）
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.toggle("德甲专精", value=bundesliga_mode, key='falcon_bundesliga_mode',
+                                  help="开启后启用德甲专精策略：仅德甲，赔率≥2.5，置信≥50%")
+                    with col2:
+                        st.toggle("英超专精", value=epl_mode, key='falcon_epl_mode',
+                                  help="开启后启用英超专精策略：仅英超，赔率≥3.0，置信≥50%")
+                    
+                    st.caption("💡 无安全边际，出手太多质量差，亏损严重")
             
             else:
                 # ☯️ 八卦#C01（串关AI，待验证）
