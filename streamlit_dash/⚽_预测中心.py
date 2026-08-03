@@ -52,6 +52,10 @@ df_all = load_match_feature_data()
 df_schedule = load_schedule_data()
 df_preds = load_predictions()
 
+# 【云端演示模式】部署端无 football.db（165MB 超 GitHub 限制未入库）时历史数据为空：
+# 赛事日历/单场预测/预测历史 依赖本地历史数据，云端仅展示项目框架与模型验证结论
+IS_CLOUD_DEMO = df_all.empty or df_schedule.empty
+
 # 列名兼容
 league_raw_col = "league_code_raw" if "league_code_raw" in df_all.columns else "league_code"
 home_col = "home_team_std" if "home_team_std" in df_all.columns else "home_team"
@@ -85,6 +89,16 @@ if away_cn_col:
 
 # ==================== 主区域 ====================
 st.title("⚽ 足球赛事预测中心")
+
+if IS_CLOUD_DEMO:
+    st.warning(
+        "**🌐 云端演示模式**：当前环境未包含历史比赛数据库（`football.db` 约 165MB，"
+        "超 GitHub 单文件 100MB 限制，未随仓库分发）。\n\n"
+        "赛事日历 / 单场预测 / 预测历史 依赖本地历史数据，云端暂无法提供；"
+        "本页面当前仅展示项目框架与模型验证结论。\n\n"
+        "**完整功能请在本地运行**：`streamlit run streamlit_dash/⚽_预测中心.py` "
+        "（本地 `football.db` 含全部历史数据）。"
+    )
 
 # 使用者昵称（必填，存在 session_state 中）
 col_user1, col_user2 = st.columns([1, 4])

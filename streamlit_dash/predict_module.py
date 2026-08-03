@@ -153,10 +153,16 @@ DB_PATH = os.path.join(ROOT_DIR, "football.db")
 # 缓存数据库球队数据，仅首次页面加载读取一次
 @st.cache_data
 def load_match_base_data(db_path):
-    conn = sqlite3.connect(db_path)
-    df = pd.read_sql("SELECT * FROM match_feature_final", conn)
-    conn.close()
-    return df
+    """加载历史特征数据（手动预测用）
+    【云端无 db 降级】表不存在时返回带列空 df，预测面板显示"暂无球队数据"而非崩溃"""
+    try:
+        conn = sqlite3.connect(db_path)
+        df = pd.read_sql("SELECT * FROM match_feature_final", conn)
+        conn.close()
+        return df
+    except Exception:
+        from common.data_loader import _empty_df_with, _FEATURE_EMPTY_COLS
+        return _empty_df_with(_FEATURE_EMPTY_COLS)
 
 # 自动迁移：确保字段存在
 def _ensure_predictions_schema(cursor):

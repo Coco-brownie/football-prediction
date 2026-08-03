@@ -20,6 +20,7 @@ from team_mapping_v2 import LEAGUE_TEAM_MAP, CFG_2_DB_CODE, get_team_cn_name_v2
 from common_config import LEAGUE_REGISTRY
 from common.usage_tracker import track
 from streamlit_dash.predict_module import save_prediction_to_db
+from common.data_loader import _empty_df_with, _FEATURE_EMPTY_COLS, _SCHEDULE_EMPTY_COLS
 
 # 数据库编码 -> 配置编码反向映射
 DB_2_CFG = {v: k for k, v in CFG_2_DB_CODE.items()}
@@ -70,10 +71,14 @@ LEAGUE_NAMES = {k: v["name"] for k, v in LEAGUE_DISPLAY.items()}
 
 @st.cache_data(ttl=86400)
 def load_schedule_data():
-    """加载全部赛程数据（缓存1天），自动转换中文队名"""
-    conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql("SELECT * FROM match_schedule", conn)
-    conn.close()
+    """加载全部赛程数据（缓存1天），自动转换中文队名
+    【云端无 db 降级】表不存在时返回带列空 df，页面显示"无数据"而非崩溃"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        df = pd.read_sql("SELECT * FROM match_schedule", conn)
+        conn.close()
+    except Exception:
+        return _empty_df_with(_SCHEDULE_EMPTY_COLS)
     df["match_date"] = pd.to_datetime(df["match_date"])
 
     # 英文队名转中文（【2026-08-08 修复】改用统一映射接口 get_team_cn_name_v2：
@@ -90,10 +95,14 @@ def load_schedule_data():
 
 @st.cache_data(ttl=3600)
 def load_historical_data():
-    """加载历史比赛数据（用于计算球队近期战绩，缓存1小时）"""
-    conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql("SELECT * FROM match_feature_final", conn)
-    conn.close()
+    """加载历史比赛数据（用于计算球队近期战绩，缓存1小时）
+    【云端无 db 降级】表不存在时返回带列空 df，页面显示"无数据"而非崩溃"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        df = pd.read_sql("SELECT * FROM match_feature_final", conn)
+        conn.close()
+    except Exception:
+        return _empty_df_with(_FEATURE_EMPTY_COLS)
     df["match_date"] = pd.to_datetime(df["match_date"])
     return df
 
@@ -162,6 +171,11 @@ def render_schedule_calendar(user_name=None):
     # 加载数据
     df_all = load_schedule_data()
     df_hist = load_historical_data()
+
+    # 【云端无 db 降级】无赛程数据时直接提示，不渲染筛选区（避免空 df .dt/ min 报错）
+    if df_all.empty:
+        st.info("📭 云端暂无赛程数据（本地 `football.db` 含完整赛程，请本地运行查看）")
+        return
 
     # ========== 筛选区 ==========
     col1, col2, col3 = st.columns([2, 3, 1])
