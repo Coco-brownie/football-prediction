@@ -1,0 +1,130 @@
+{
+  "project": {
+    "name": "football_pred",
+    "version": "1.2.2",
+    "description": "五大联赛足球赛事预测 - LightGBM双子模型"
+  },
+
+  "paths": {
+    "db_path": "football.db",
+    "model_dir": "model",
+    "data_dir": "csv_data",
+    "schedule_dir": "footballmatchdate",
+    "backup_dir": "model_backup"
+  },
+
+  "leagues": {
+    "EPL": {
+      "name": "英超",
+      "db_code": "E0",
+      "start_year": 2018,
+      "team_count": 20
+    },
+    "LLA": {
+      "name": "西甲",
+      "db_code": "SP1",
+      "start_year": 2018,
+      "team_count": 20
+    },
+    "BUN": {
+      "name": "德甲",
+      "db_code": "D1",
+      "start_year": 2018,
+      "team_count": 18
+    },
+    "SER": {
+      "name": "意甲",
+      "db_code": "I1",
+      "start_year": 2018,
+      "team_count": 20
+    },
+    "LIG": {
+      "name": "法甲",
+      "db_code": "F1",
+      "start_year": 2018,
+      "team_count": 18
+    }
+  },
+
+  "features": {
+    "base_features": [
+      "h5_gf", "h5_ga", "h5_shot", "h5_shot_ot",
+      "h10_gf", "h10_ga",
+      "a5_gf", "a5_ga", "a5_shot", "a5_shot_ot",
+      "a10_gf", "a10_ga",
+      "odds_draw_real", "odds_lose_real"
+    ],
+    "h2h_features": [
+      "h2h_cnt", "h2h_home_win_rate", "h2h_draw_rate",
+      "h2h_home_gf_avg", "h2h_home_ga_avg"
+    ],
+    "prob_features": [
+      "prob_ratio_ha", "prob_draw_share", "prob_max",
+      "prob_entropy", "prob_home_favorite"
+    ],
+    "draw_features": [
+      "home_draw_rate_5", "home_draw_rate_10",
+      "away_draw_rate_5", "away_draw_rate_10"
+    ],
+    "elo_features": [
+      "home_elo_before", "away_elo_before", "elo_diff_before"
+    ],
+    "elo_extended_features": [
+      "h5_gf_elo_weighted", "h5_ga_elo_weighted",
+      "a5_gf_elo_weighted", "a5_ga_elo_weighted",
+      "home_w5_elo_trend", "home_w10_elo_trend",
+      "away_w5_elo_trend", "away_w10_elo_trend"
+    ],
+    "time_decay_features": [
+      "h5_gf_time_decay", "h5_ga_time_decay",
+      "a5_gf_time_decay", "a5_ga_time_decay",
+      "h10_gf_time_decay", "h10_ga_time_decay",
+      "a10_gf_time_decay", "a10_ga_time_decay"
+    ],
+    "league_onehot": [
+      "league_SER", "league_E0", "league_D1", "league_LIG", "league_LLA"
+    ],
+    "value_features": [
+      "value_ratio", "value_diff_rel", "home_value_rel", "away_value_rel", "value_diff_signed"
+    ]
+  },
+
+  "model": {
+    "type": "twin_lgb",
+    "home_weight": 0.5,
+    "away_weight": 0.5,
+    "default_params": {
+      "n_estimators": 300,
+      "learning_rate": 0.05,
+      "num_leaves": 31,
+      "max_depth": -1,
+      "subsample": 0.85,
+      "colsample_bytree": 0.82,
+      "min_child_samples": 20,
+      "class_weight": "balanced",
+      "verbose": -1,
+      "random_state": 42
+    }
+  },
+
+  "training": {
+    "val_split_days": 1095,
+    "time_decay": true,
+    "decay_min": 0.05,
+    "backup_before_train": true
+  },
+
+  "prediction": {
+    "confidence_high": 0.68,
+    "confidence_mid": 0.60,
+    "default_draw_odds": 3.5,
+    "default_away_odds": 3.0
+  },
+
+  "schedule": {
+    "daily_verify_hour": 6,
+    "weekly_retrain_day": "monday",
+    "weekly_retrain_hour": 3,
+    "auto_backup": true
+  }
+}

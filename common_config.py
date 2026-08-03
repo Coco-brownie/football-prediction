@@ -11,11 +11,18 @@ CONFIG_PATH = os.path.join(ROOT_DIR, "config.json")
 _config_cache = None
 
 def load_config():
-    """加载配置文件（带缓存）"""
+    """加载配置文件（带缓存）
+    【2026-08-09 加固：config.json 缺失时给出明确中文指引，
+      避免部署/克隆环境缺文件时抛裸 FileNotFoundError 难以排查】"""
     global _config_cache
     if _config_cache is not None:
         return _config_cache
 
+    if not os.path.exists(CONFIG_PATH):
+        raise FileNotFoundError(
+            f"【配置缺失】未找到配置文件：{CONFIG_PATH}\n"
+            f"处理指引：请从仓库获取 config.json（项目根目录）后再启动。"
+        )
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         _config_cache = json.load(f)
     return _config_cache
