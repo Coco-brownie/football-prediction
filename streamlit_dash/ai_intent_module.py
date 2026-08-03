@@ -1,7 +1,9 @@
 """
 AI出手建议计算模块
 对给定比赛，计算三个AI是否建议出手、共识度等级
-（模型验证工具，非投注建议）
+（模型验证工具，纯参考；是否出手由用户独立判断，AI 绝不替用户做决定）
+【2026-08-08 方案A】置信度口径已改为 WF 分桶历史命中率（见 match_predict._get_confidence）：
+  三 AI 阈值适配新口径并拉开梯度（保守优先，宁可不出手），平局整体压一档。
 """
 import sys
 import os
@@ -13,10 +15,12 @@ sys.path.insert(0, ROOT_DIR)
 
 # 三AI配置（与WF回测一致，v1.0.7版本）
 # 三个AI的核心区别是定位不同：磐石求稳、天秤均衡、猎鹰求利（冷门猎手）
+# 【2026-08-08 方案A】置信度口径改为「WF分桶历史命中率」（41%~87%）后，三AI阈值重新拉开梯度，
+#   保守优先、宁可不出手：激进AI 0.50 / 中立AI 0.55 / 保守AI 0.60（历史命中率≥门槛才参考）。
 AI_CONFIGS = {
-    "激进AI": {"min_confidence": 0.55, "kelly_fraction": 0.90, "require_value": True, "value_margin": 1.0, "icon": "🦅", "name": "猎鹰"},
+    "激进AI": {"min_confidence": 0.50, "kelly_fraction": 0.90, "require_value": True, "value_margin": 1.0, "icon": "🦅", "name": "猎鹰"},
     "中立AI": {"min_confidence": 0.55, "kelly_fraction": 0.60, "require_value": True, "value_margin": 1.1, "icon": "⚖️", "name": "天秤"},
-    "保守AI": {"min_confidence": 0.55, "kelly_fraction": 0.20, "require_value": True, "value_margin": 1.2, "icon": "🪨", "name": "磐石"},
+    "保守AI": {"min_confidence": 0.60, "kelly_fraction": 0.20, "require_value": True, "value_margin": 1.2, "icon": "🪨", "name": "磐石"},
 }
 
 # 猎鹰Plus版配置（冷门猎手专精）
@@ -34,14 +38,14 @@ FALCON_PLUS_CONFIG = {
         "min_odds": 2.5,
         "league_filter": ["D1"],
         "icon": "🇩🇪",
-        "desc": "仅德甲，赔率≥2.5+置信≥50%，ROI 60%+",
+        "desc": "仅德甲，赔率≥2.5+置信≥50%【外样本统一验证 ⚠️存疑：+6.85%】",
     },
     "英超专精": {
         "min_confidence": 0.50,
         "min_odds": 3.0,
         "league_filter": ["E0"],
         "icon": "🏴",
-        "desc": "仅英超，赔率≥3.0+置信≥50%，ROI +27%",
+        "desc": "仅英超，赔率≥3.0+置信≥50%【外样本统一验证 ⚠️存疑：+23.51%】",
     },
 }
 
@@ -57,7 +61,8 @@ ADVANCED_MODE_CONFIG = {
     "require_value": True,
     "value_margin": 1.2,
     # 联赛筛选：只投德甲+意甲
-    "league_filter": ["D1", "SER"],
+    # 【2026-08-05 修复：意甲用 B体系 db_code I1（原写 SER 旧码，会匹配不上）】
+    "league_filter": ["D1", "I1"],
     # 平局策略
     "draw_enabled": True,
     "draw_min_confidence": 0.50,
@@ -98,6 +103,10 @@ def calc_ai_bet_intent(pred_confidence, pred_result, odds=None,
     返回:
         dict: 每个AI的出手建议 + 共识等级
     """
+    # 【2026-08-08 方案A】平局整体压一档（+0.05）：1x2 中平局天然低频低准，保守优先
+    draw_penalty = 0.05 if pred_result == "平局" else 0.0
+    ai_min_conf = {k: cfg["min_confidence"] + draw_penalty for k, cfg in AI_CONFIGS.items()}
+
     intents = {}
     bet_count = 0
     
@@ -129,7 +138,7 @@ def calc_ai_bet_intent(pred_confidence, pred_result, odds=None,
             
             # 置信度门槛
             if will_bet:
-                min_conf = plus_cfg.get("min_confidence", cfg["min_confidence"])
+                min_conf = plus_cfg.get("min_confidence", ai_min_conf[ai_name])
                 if pred_confidence < min_conf:
                     will_bet = False
                     reason = f"置信度不足（需≥{min_conf:.0%}）"
@@ -155,9 +164,10 @@ def calc_ai_bet_intent(pred_confidence, pred_result, odds=None,
                 conf = scale_confidence(conf)
             
             # 置信度门槛
-            if will_bet and conf < ADVANCED_MODE_CONFIG["min_confidence"]:
+            min_conf_adv = ADVANCED_MODE_CONFIG["min_confidence"] + draw_penalty
+            if will_bet and conf < min_conf_adv:
                 will_bet = False
-                reason = f"置信度不足（需≥{ADVANCED_MODE_CONFIG['min_confidence']:.0%}）"
+                reason = f"置信度不足（需≥{min_conf_adv:.0%}）"
             
             # 置信度优势判断
             if will_bet and ADVANCED_MODE_CONFIG["require_value"] and odds and odds > 0:
@@ -184,9 +194,9 @@ def calc_ai_bet_intent(pred_confidence, pred_result, odds=None,
         else:
             # 普通模式
             # 置信度门槛
-            if pred_confidence < cfg["min_confidence"]:
+            if pred_confidence < ai_min_conf[ai_name]:
                 will_bet = False
-                reason = f"置信度不足（需≥{cfg['min_confidence']:.0%}）"
+                reason = f"置信度不足（需≥{ai_min_conf[ai_name]:.0%}）"
             
             # 置信度优势判断（需要市场概率）
             if will_bet and cfg["require_value"] and odds and odds > 0:

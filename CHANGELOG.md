@@ -1,0 +1,114 @@
+# 更新日志 (CHANGELOG)
+
+本项目采用语义化版本（SemVer）：`主版本.次版本.修订号`。
+重大修复/新增功能升级次版本号，小修补升级修订号。
+
+---
+
+## [1.3.0] - 2026-08-08
+
+### 🔴 重大修复：身价特征 `team_value_features` value_ratio 3981 倍漂移
+
+**故障现象**：`value_ratio` 被算出 1566 倍极值、训练集中"身价特征匹配率"显示 100%（实为 60.9%）、特征跳变 13710 条、欧塞尔身价异常偏低。
+
+**根因**：
+- 快照表 `tm_club_squads` 无 `match_date` 字段 → 旧构建脚本按"联赛内全量快照"聚合，匹配到**未来赛季估值**；
+- 无限快照导致球队身价随时间无限叠加 → 极端离群值污染 `value_ratio` 等 5 维身价特征。
+
+**修复内容**：
+- 新增 `features/build_team_value_features.py`：按 **ASOF（截至比赛日）最新快照** 重建身价特征表，零未来值；
+- 新增 **500 万下限清洗**：身价低于 500 万欧元视为数据缺失，填充中性值（修复欧塞尔 5 万 → 500 万级）；
+- 新增 2 个诊断脚本 `features/build_team_value_features_diag.py`、`features/validate_team_value.py`：校验未来值污染、值域、跳变、覆盖率；
+- 重建 `team_value_features` 表：2000-2008 年全中性（当时无快照数据）、2008 起真实覆盖 **60.9%**、`value_ratio` max 1566 → 54.9、跳变 13710 → 5 条、零未来值污染。
+
+**模型层**：
+- 全模型重训（`training/train_all_clean.py`）：
+  - 主模型 52+5=**57 维**（身价特征参与训练），OOS 验证集准确率 **53.39%**；
+  - 身价特征重要性占比 **4.71%**（健康，非主导特征）；
+  - 平局二分类 52 维（身价对平局影响小，维持原设计）。
+- 重训产物：`model/home_model.pkl`、`model/draw_binary_model.txt`、`model/poisson_model_params.json`、`model/calibrator_params.json`。
+
+**统计口径统一**（修复 `value_ratio.notna()` 误报 100%）：
+- 所有脚本改用 `home_value.notna()` 统计真实身价覆盖（缺失行被 build 填中性值 1.0 而非 NULL）；
+- 统一结果：训练端 / backtest / walk_forward 全部 = **60.9%**。
+
+**验证（Level 3 金标准 walk_forward，严格无未来函数）**：
+- 整体准确率 **52.01%**（26606/51157，三分类随机基线 33.3%）；
+- 各联赛：D1 50.3% / E0 52.9% / F1 50.5% / I1 53.1% / SP1 52.9%；
+- 投注策略（真实赔率扣抽水）ROI -1.7%~-2.3%：**模型健康，但直接下注不盈利**（庄家抽水 6-7% 的现实，非数据问题）。
+
+**生产健康检查（recalculate_predictions.py）**：
+- 回填 `match_feature_final.pred_result/pred_confidence` 52561 条；
+- 57 维、校准器 a=4.3632/b=-2.2046、融合权重 0.15；
+- 整体准确率 55.54%（含训练集乐观值）、混淆矩阵/分项命中率/检出率健康。
+
+### 🛠 代码管理
+- 修复 `.gitignore`：放行 `common_config.py`（全模块依赖）与 `config.json`（特征定义权威源，无敏感信息）；
+- 新增 `CHANGELOG.md`（本文件）、`README.md`（项目说明 + 部署）、`DEPLOYMENT.md`（部署手册 + 数据库同步）；
+- 修复看板 `schedule_module.can_predict_match` 列名漂移：`match_feature_final` 球队列实为 `home_team_std`/`away_team_std`（标准化英文名），旧代码硬编码 `home_team`/`away_team` 导致赛事日历页 KeyError 崩溃；改为列名兼容 + 英文标准名匹配（与 `build_feature_by_teams` 同 key 保证一致性，predict_module 早已兼容、此处漏改）；
+- 旧模型归档：`lgb_match_model.pkl`、`poisson_*_timesplit.pkl`×2、`platt_calibrator_home.pkl` 移入 `model/_deprecated/`（不入 git）。
+
+### 🔧 看板重启检查（2026-08-08 追加）
+重启看板后发现的 7 类问题及修复：
+
+**① 缺表 `wf_confidence_accuracy` / `league_independent_wf`**：`walk_forward_fused.py` 只输出 CSV 不写库，看板「核心验证结论/联赛难度排行」读不到表。新增 `backtest/generate_dashboard_tables.py`：从 `wf_fused_result_0.15.csv`（生产权重 0.15 OOS 金标准）生成两张看板表（置信度分桶 vs 真实准确率、联赛独立 WF 排名）。运行：`python backtest\generate_dashboard_tables.py`。
+
+**② 队名未映射（西甲/法甲/意甲中文名）**：`schedule_module.load_schedule_data` / `common/data_loader.load_schedule_data` 的 `get_cn_name` 只做精确匹配，未走 `get_standard_team` 的归一化匹配（变音/前缀/全称/简写），且对旧码（LLA/SER/LIG）不兼容。改为统一调用 `team_mapping_v2.get_team_cn_name_v2`（内部完成 db_code→配置键 转换 + 归一化匹配）。
+
+**③ 数据看板明细/积分榜中文映射不全**：`match_feature_final` 球队列存在中英混杂（部分行存中文、部分存英文）。`2_📊_数据看板.py` 的 `std_2_cn` 构建增强：把 标准英文名/中文名/全称 三态都映射到中文名。
+
+**④ 核心验证结论 / 联赛难度排行静态文字陈旧**：看板「关键结论/关键发现」原先写死旧数字（82%、英超最好预测等），改为通用描述 + 随 WF 金标准数据自动更新。
+
+**⑤ 策略研究发现 v1.0.4 与现体系不贴合**：该区块为身价修复前的旧研究，标注为「历史策略研究（v1.0.4 · 基于修复前身价数据）」并加警示，指向当前 WF 金标准（整体准确率 51.4%）。
+
+**⑥ 策略动物园数据未贴合最新结论**：`strategy_zoo_wf_a_36`/`strategy_zoo_full_a_36` 为修复前旧数据，区块加「数据版本提示」警示；如需更新需重跑策略回测生成新表。
+
+**⑦ 赛事日历可用性**：队名映射修复后，西甲/法甲/意甲赛程卡片可正常显示中文队名；配合上一轮 `can_predict_match` 列名修复，日历页不再崩溃。
+
+**✅ 执行结果（2026-08-08 已生成并验证）**：
+- `python backtest\generate_dashboard_tables.py` 成功生成两张表（OOS **54,728** 行，生产权重 0.15）；
+- 置信度分桶校准良好：<50%→41.4%、50-60%→55.2%、60-70%→65.4%、70-80%→76.4%、80-90%→84.0%、≥90%→87.5%（强正相关；50-80%区间模型略保守、80%+略高估）；
+- 联赛排名：英超53.2%最佳 > 西甲/意甲51.9% > 德甲50.1% > 法甲49.9%；≥70%高置信准确率：西甲82.2%最高 > 法甲80.1% > 英超78.8% > 意甲77.6% > 德甲73.7%。
+
+**🔁 第二轮看板修复（2026-08-08）**：
+- **预测/批量预测失效根治**：定位到 `match_feature_final` 球队列（home_team_std/away_team_std）为历史构建遗留的**中英混杂**数据（约80%中文、20%英文），而 `build_feature_by_teams` 与 `can_predict_match` 用英文队名精确匹配 → 匹配不到中文存储的比赛 → 特征全默认 → 预测失效。已在 `feature_auto_build.py` 全量改造为**中英双向匹配**（新增 `_team_keys` 辅助：isin([中文,英文]) 匹配 + ELO/身价/趋势缓存双向查询），`can_predict_match` 同步改 isin 双向；预测链路（赛事日历/单场/批量）全部恢复。
+- **no such table 复现**：定位到项目存在**多个 football.db**（根库 + `streamlit_dash` 次库 + `exe_package` 副本），部分页面连接次库导致读不到根库新建的表。已让 `generate_dashboard_tables.py` **多库统一写入**（根库+所有已存在次库/副本），彻底消除复现。
+- **27支球队名未映射**：新增诊断脚本 `backtest/_diag_unmapped_teams.py` 输出未映射英文队名清单（含出现次数）。
+
+**🔁 第三轮看板修复（2026-08-08 完成）**：
+- **27支英文队名映射补齐**：诊断脚本实测 30 支（其中 `AC米兰`/`阿雅克肖GFCO`/`巴黎FC` 为数据里已存中文、被脚本误判，无需处理）；真正缺失的 **27 支**英文队名（意甲9+德甲8+英超4+西甲4+法甲2：Reggina/Messina/Perugia/MGladbach/Cottbus/Hansa Rostock/Charlton/Derby/Nottm Forest/Recreativo/Sedan 等）已在 `team_mapping_v2.py` 末尾用 `_LEGACY_MISSING_TEAMS` 追加映射（以数据确切写法为 key，不覆盖已有映射）。补齐后：数据看板比赛分析/球队详情中文全覆盖 + 预测中英双向 `_team_keys` 命中率提升。
+- **多库清理（待用户确认后执行）**：确认所有看板页面（预测中心/模型验证/数据看板）均经 `common.data_loader` 连接**根库** `football.db`；`streamlit_dash\football.db` 与 `exe_package\` 下 3 个 DB 为冗余副本（exe_package 为废弃方案）。新增 `backtest/_diag_db_tables.py` 对比各库表清单+行数，确认根库最完整后删除冗余库；`generate_dashboard_tables.py` 多库写入会自动跳过不存在的路径。
+- **PowerShell 启动提示**：`启动看板.bat` 需带 `./` 前缀（`./启动看板.bat`）才能执行。
+
+**🔁 第三轮补遗：多库问题根治（2026-08-08）**
+- **根因定位**：新增 `backtest/_diag_db_refs.py` 全量扫描项目 456 处 DB 连接，发现 `2_📊_数据看板.py` 有 **3 处独立连接**（联赛预测难度排行 x2、置信度 vs 实际准确率 x1）用 `os.path.join(os.path.dirname(os.path.dirname(SCRIPT_PATH)), "football.db")` 误连**次库** `streamlit_dash\football.db`（SCRIPT_PATH 在 pages/ 下，两层 dirname 只到 streamlit_dash/，**少写一层**）。这正是 no such table 反复复现、以及次库存在的根源。
+- **修复**：3 处全部改为 `os.path.join(ROOT_DIR, "football.db")`（ROOT_DIR 已在文件顶部正确定义为项目根）。至此**所有看板页面（预测中心/模型验证/数据看板）统一连接根库**，仅剩 `common.data_loader.DB_PATH` 单一数据源。
+- **清理确认**：`_diag_db_tables.py` 对比证实根库 29 张表最完整（match_feature_final 52,561 行），次库仅 2 张验证表、`exe_package` 2 个库为旧副本（废弃方案）——均为纯冗余，删除后不影响看板（generate_dashboard_tables 会自动收敛为只写根库）。
+
+**🔁 第四轮看板修复（2026-08-08）预测特征维度不匹配**
+- **根因**：`schedule_module.build_pred_feature`（赛事日历单场/批量预测）调用 `build_feature_by_teams` 时未传 `use_value_features=True`（默认 False）→ 返回 **52 维**（缺 5 维身价），而 `match_predict.predict_match` 期望 `FEATURE_COLS` **57 维**（52基础+5身价）→ 断言 `X.shape[1] != 57` 崩溃。`predict_module`（预测中心手动面板）已正确传 `use_value_features=True`，故仅赛事日历受影响。
+- **修复**：`schedule_module.build_pred_feature` 加 `use_value_features=True`，与 `predict_module`/`match_predict` 的 57 维对齐；身价缓存从根库 `team_value_features` 读取（根库有表 52,561 行），缺失球队自动兜底不抛异常。单场/批量预测恢复 57 维完整特征。
+
+**🔁 第五轮看板修复（2026-08-08）方案A：置信度改历史命中率 + AI 出手建议模块**
+- **背景/根因**：用户发现预测结果「置信度 = 主胜概率」（如拜仁 52.3%/52.3%），质疑数据异常。查证非 bug：原 `confidence = max(校准后概率)`，而 Platt 校准器（a=4.3632,b=-2.2046）在 40-60% 区间近恒等（sigmoid(4p-2)≈p），故中低区间置信度数值≈主胜概率，纯属口径误导用户。
+- **方案A（置信度 = WF 分桶历史真实命中率）**：`match_predict` 新增 `_load_wf_conf_table`/`_get_confidence`——按校准后 `max_prob` 所在档位查根库 `wf_confidence_accuracy` 表（walk_forward OOS 生成，与「核心验证结论」同口径）返回该档位真实命中率。表缺失/异常自动降级 Platt 校准，预测链路永不崩。效果：拜仁主胜 52.3% → 置信度 **55.2%**（50-60%档）、巴萨主胜 48.6% → 置信度 **41.4%**（<50%档）——置信度与主胜概率数值分离，语义改为「历史上该档位命中了多少」，更保守真实。
+- **改造 `streamlit_dash/ai_intent_module.py`（三AI出手参考）**：三 AI 阈值适配方案A新口径（置信度=历史命中率）并拉开梯度——激进AI 0.50 / 中立AI 0.55 / 保守AI 0.60（原三AI同为0.55），平局整体压一档（+0.05），保守优先、宁可不出手；纯参考、绝不替用户决策（UI 明确标注「是否出手由您独立判断，AI 不替您做决定」）。完整签名/返回结构与预测中心批量三AI参考、赛事日历查看详情完全兼容（含猎鹰Plus/高级模式/价值判断）。
+- **展示同步**：赛事日历卡片/批量表/预测中心置信度均标注「（历史命中率）」口径；分级阈值由 0.65/0.50 改为 0.60/0.50（新值域最高约 87%）；批量 caption 改为「置信度=该档位历史命中率（WF外样本验证）」。
+- **用户原则落实**：AI 出手建议可以保守甚至不出手，但只给数据参考；通过逻辑运算决定「AI 出不出手」，绝不替用户决定是否出手。
+- **✅ 执行结果（2026-08-08 已生成并验证）**：用户运行 `python backtest\generate_dashboard_tables.py` 成功——`wf_confidence_accuracy` 六档全部生成（<50%→41.4% / 50-60%→55.2% / 60-70%→65.4% / 70-80%→76.4% / 80-90%→84.0% / ≥90%→87.5%，样本 29,566/12,570/7,025/3,980/1,539/48），`league_independent_wf` 五联赛排名同步生成（英超 53.2% 最佳 → 法甲 49.9%），均写入根库 `football.db`——方案A查表置信度数据源就位。重启看板后：拜仁主胜 52.3% → 置信度 55.2%（50-60%档）、巴萨主胜 48.6% → 置信度 41.4%（<50%档），置信度与主胜概率数值分离，符合预期。
+- **✅ 看板更新日志同步**：`⚽_预测中心.py` 底部「📝 更新日志」由 v1.2.3 升级为 **v1.3.0**，补齐 2026-08-08 全部修复（方案A、AI出手参考保守化、预测链路修复、队名映射、多库根治、特征对齐、验证表、身价漂移）；`APP_VERSION` 同步。
+
+---
+
+## [1.2.2] - 2026-08-07（上一版本）
+- 融合权重 0.15 外样本终审（walk_forward_fused 25 折）：准确率 51.44%、价值下注 ROI +1.41%；
+- 在线特征与训练端口径统一（原始赔率 vs 去水概率、ELO 赛前/赛后时序、联赛独热映射）；
+- 模型启动自检友好化（缺失文件给出中文处理指引）。
+
+## [1.2.0] - 2026-08-05
+- 三档平局融合权重扫描（0.15/0.20/0.25），定案 0.15 保持 1x2 最高质量；
+- 生产回填与实时预测统一出口（三模型融合+校准）。
+
+## [1.0.0] - 2026-07-2x
+- 移除泄露特征 `shot_on_diff`；双子模型改单主场模型；
+- LightGBM 原生格式 + 泊松参数化，解决跨平台兼容。

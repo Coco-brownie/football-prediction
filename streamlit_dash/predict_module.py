@@ -32,7 +32,7 @@ FEATURE_CN_MAP = {
     "a10_ga": "客队近10场失球",
     "odds_draw_real": "平局赔率偏离",
     "odds_lose_real": "客胜赔率偏离",
-    "shot_on_diff": "射正率差异",
+    # 注：shot_on_diff 已因泄露在 v1.0.0 移除，FEATURE_COLS 不再包含它，此处不再保留映射
     "h2h_cnt": "交锋场次",
     "h2h_home_win_rate": "交锋主队胜率",
     "h2h_draw_rate": "交锋平局率",
@@ -270,7 +270,10 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
     # 2. 按联赛过滤球队（只显示当前联赛的球队，避免跨联赛不合理对阵）
     league_col = "league_code_raw" if "league_code_raw" in df_predict_all.columns else "league_code"
     home_col = "home_team_std" if "home_team_std" in df_predict_all.columns else "home_team"
-    cn_col = "home_team" if "home_team_std" in df_predict_all.columns else None
+    # 中文名列独立判断：从实际存在的列中按优先级选取，避免 home_team 缺失时 df_league[[home_col, cn_col]] KeyError
+    _cn_candidates = [c for c in ("home_team_cn", "home_team", "home_team_name")
+                      if c in df_predict_all.columns and c != home_col]
+    cn_col = _cn_candidates[0] if _cn_candidates else None
 
     df_league = df_predict_all[df_predict_all[league_col] == curr_league_db]
     league_teams_std = sorted(list(set(df_league[home_col].dropna().tolist())))
@@ -279,9 +282,9 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
         st.warning("⚠️ 当前联赛暂无可用球队数据")
         return
 
-    # 从数据直接构建 std -> 中文名 映射（100%覆盖，不依赖外部字典）
+    # 从数据直接构建 std -> 中文名 映射（100%覆盖，不依赖外部字典）；cn_col 已确保存在，双保险再校验一次
     std_to_cn_local = {}
-    if cn_col:
+    if cn_col and cn_col in df_league.columns:
         for _, row in df_league[[home_col, cn_col]].drop_duplicates().iterrows():
             std_to_cn_local[row[home_col]] = row[cn_col]
     # 合并外部映射作为补充
@@ -352,15 +355,6 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
         is_home = True if scene_type == "主队主场作战" else False
         st.caption("默认主队主场即可。切换为「客队客场」可模拟换位预测，日常预测用不到")
 
-        st.divider()
-        shot_diff = st.number_input(
-            "射正差值（主队 - 客队，默认0表示双方相当）",
-            value=0.0,
-            step=0.1,
-            key="input_shot_diff"
-        )
-        st.caption("球队近期射正次数差值，影响进球数预测精度，日常使用保持默认即可")
-
     run_btn = st.button(
         "🚀 预测",
         type="primary",
@@ -371,10 +365,15 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
     if run_btn:
         with st.spinner("正在抓取球队近期战绩、组装特征、模型推理计算..."):
             try:
+                # 【2026-08-07 口径修复：build_feature_by_teams 现接收【原始赔率】，
+                #  内部自行去水算概率衍生特征（与训练端 match_feature_final 对齐——
+                #  特征13/14 odds_draw_real/odds_lose_real 存的是原始赔率 2~5，
+                #  概率衍生特征19-23 用去水概率。此前传去水概率(0~1)导致在线特征与训练系统性失配）】
                 input_values = build_feature_by_teams(
                     df_predict_all, pred_home, pred_away,
-                    odds_draw_real, odds_lose_real,
-                    league_code=curr_league_db
+                    home_odds_input, draw_odds_input, away_odds_input,
+                    league_code=curr_league_db,
+                    use_value_features=True  # 【2026-08-03 开启身价特征，57维与训练端对齐】
                 )
                 pred_res = predict_match(input_values, is_home_scene=is_home)
 
@@ -417,18 +416,18 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
         st.markdown(f"""
         <div style="padding:16px;background:{result_color[pred_res['predict_result']]}20;border-left:6px solid {result_color[pred_res['predict_result']]};border-radius:8px;margin-bottom:12px">
             <h3 style="margin:0 0 4px 0">预测结果：{pred_res['predict_result']}</h3>
-            <p style="margin:0">置信度：{pred_res['confidence']:.2%}</p>
+            <p style="margin:0">置信度：{pred_res['confidence']:.2%}（该档位历史命中率）</p>
         </div>
         """, unsafe_allow_html=True)
 
-        # 置信度分级提示
+        # 置信度分级提示（新口径：置信度=该档位历史命中率，最高约87%）
         conf = pred_res["confidence"]
-        if conf >= 0.65:
-            st.success(f"🔴 高置信预测 — 把握较大，可重点参考")
+        if conf >= 0.60:
+            st.success(f"🔴 高命中率档 — 历史命中率≥60%，可重点参考")
         elif conf >= 0.50:
-            st.warning(f"🟡 中等置信 — 有一定参考价值，建议结合其他分析")
+            st.warning(f"🟡 中等命中率档 — 历史命中率50%~60%，有一定参考价值，建议结合其他分析")
         else:
-            st.info(f"🟢 低置信 — 不确定性较大，仅供娱乐参考")
+            st.info(f"🟢 低命中率档 — 历史命中率<50%，不确定性较大，仅供参考")
 
         # 💎 价值决策
 
@@ -466,7 +465,7 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
         })
             st.dataframe(value_df, hide_index=True, use_container_width=True)
 
-        # 价值评级 + 仓位建议
+        # 价值评级 + 参考权重（仅作理论参考，不构成投资建议）
         ev_list = [("主胜", ev_h, kelly_h), ("平局", ev_d, kelly_d), ("客队胜", ev_a, kelly_a)]
         best = max(ev_list, key=lambda x: x[1])
         best_name, best_ev, best_kelly = best
@@ -476,18 +475,18 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
             value_desc = f"模型显著看好{best_name}，置信度差值+{best_ev:.1%}，验证价值充足"
         elif best_ev > 0.03:
             value_level = "🟡 存在置信度优势"
-            value_desc = f"{best_name}方向有正置信度差值，但空间有限，建议低权重验证"
+            value_desc = f"{best_name}方向有正置信度差值，但空间有限"
         elif best_ev > 0:
             value_level = "🟡 微弱置信度优势"
-            value_desc = f"{best_name}置信度差值略正，接近公允定价，可验证可不验证"
+            value_desc = f"{best_name}置信度差值略正，接近公允定价"
         else:
             value_level = "🔴 无置信度优势"
-            value_desc = "三个方向置信度差值均为负，市场定价均高于模型判断，不建议验证"
+            value_desc = "三个方向置信度差值均为负，市场定价均高于模型判断"
 
         # 置信度对比卡片
         if best_ev > 0 and best_kelly > 0:
             position_text = f"保守 {best_kelly*0.25:.1%} ~ 激进 {best_kelly:.1%}"
-            position_sub = f"推荐方向：{best_name}"
+            position_sub = f"理论最优：{best_name}"
         else:
             position_text = "不建议"
             position_sub = "无验证价值"
@@ -501,7 +500,7 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
                     <div style="font-size:0.75em;color:#888">{value_desc}</div>
                 </div>
                 <div style="text-align:right">
-                    <div style="font-size:0.8em;color:#666;margin-bottom:2px">建议验证权重</div>
+                    <div style="font-size:0.8em;color:#666;margin-bottom:2px">理论参考权重</div>
                     <div style="font-size:1.1em;font-weight:600">{position_text}</div>
                     <div style="font-size:0.75em;color:#888">{position_sub}</div>
                 </div>
@@ -509,7 +508,7 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
         </div>
         """, unsafe_allow_html=True)
         if best_ev > 0:
-            st.caption("💡 保守型用1/4凯利，稳健型用1/2凯利，激进型可用全凯利")
+            st.caption("⚠️ 以上为凯利公式理论计算值，仅作学术参考，不构成任何投注建议。体育投注有风险，请理性对待。")
 
         # 概率卡片（6张，预测方向高亮）
         home_not_lose = pred_res["prob_home_win"] + pred_res["prob_draw"]
@@ -628,39 +627,58 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
         # 历史同赔率区间（二级折叠）
         with st.expander("📊 历史同赔率区间参考（点击展开）", expanded=False):
             st.markdown("**历史同赔率区间赛果分布**")
-            user_h_prob = 1 - odds_draw_real - odds_lose_real  # 用户输入主胜去水概率
+            # 【2026-08-07 修复：历史同赔率区间此前把 odds_draw_real/odds_lose_real 当概率用，
+            #  但这两列在 match_feature_final 里存的是【原始赔率】(2~5)（repair_feature_table 从
+            #  match_feature_full 原样填入）→ real_h_prob=1-3.3-3.0=-5.3 → 永远匹配不到样本，
+            #  功能静默失效。现改为从原始赔率三列 odds_win_real/odds_draw_real/odds_lose_real 去水得
+            #  概率，与训练端 / 在线 build_feature_by_teams 完全同口径。】
+            inv_u = 1.0 / home_odds_input + 1.0 / draw_odds_input + 1.0 / away_odds_input
+            user_h_prob = (1.0 / home_odds_input) / inv_u   # 用户输入主胜去水概率
+            user_d_prob = (1.0 / draw_odds_input) / inv_u   # 用户输入平局去水概率
             prob_tolerance = 0.03  # ±3%概率范围
 
-            # 从数据计算主胜真实概率（1 - 平真实 - 客胜真实）
-            if "odds_draw_real" in df_predict_all.columns and "odds_lose_real" in df_predict_all.columns:
-                real_h_prob = 1 - df_predict_all["odds_draw_real"] - df_predict_all["odds_lose_real"]
-                real_d_prob = df_predict_all["odds_draw_real"]
+            real_h_prob = None
+            real_d_prob = None
+            if all(c in df_predict_all.columns for c in ("odds_win_real", "odds_draw_real", "odds_lose_real")):
+                inv_h = 1.0 / df_predict_all["odds_win_real"]
+                inv_d = 1.0 / df_predict_all["odds_draw_real"]
+                inv_a = 1.0 / df_predict_all["odds_lose_real"]
+                inv_s = inv_h + inv_d + inv_a
+                real_h_prob = inv_h / inv_s
+                real_d_prob = inv_d / inv_s
             else:
-                # fallback：用原始赔率列
-                inv_sum = 1/df_predict_all["odds_win"] + 1/df_predict_all["odds_draw"] + 1/df_predict_all["odds_lose"]
-                real_h_prob = (1/df_predict_all["odds_win"]) / inv_sum
-                real_d_prob = (1/df_predict_all["odds_draw"]) / inv_sum
+                # fallback：旧库无 _real 三列时，退化为从原始赔率 odds_win/draw/lose 去水
+                if all(c in df_predict_all.columns for c in ("odds_win", "odds_draw", "odds_lose")):
+                    inv_h = 1.0 / df_predict_all["odds_win"]
+                    inv_d = 1.0 / df_predict_all["odds_draw"]
+                    inv_a = 1.0 / df_predict_all["odds_lose"]
+                    inv_s = inv_h + inv_d + inv_a
+                    real_h_prob = inv_h / inv_s
+                    real_d_prob = inv_d / inv_s
 
-            mask_similar = (
-                (real_h_prob.between(user_h_prob - prob_tolerance, user_h_prob + prob_tolerance)) &
-                (real_d_prob.between(odds_draw_real - prob_tolerance, odds_draw_real + prob_tolerance))
-            )
-            similar_matches = df_predict_all[mask_similar]
-            sim_total = len(similar_matches)
-
-            if sim_total > 0:
-                sim_home_win = (similar_matches["match_result"] == "主队胜").mean()
-                sim_draw = (similar_matches["match_result"] == "平局").mean()
-                sim_away_win = (similar_matches["match_result"] == "客队胜").mean()
-
-                sim_c1, sim_c2, sim_c3, sim_c4 = st.columns(4)
-                sim_c1.metric("历史样本数", f"{sim_total} 场")
-                sim_c2.metric("实际主胜率", f"{sim_home_win:.1%}")
-                sim_c3.metric("实际平局率", f"{sim_draw:.1%}")
-                sim_c4.metric("实际客胜率", f"{sim_away_win:.1%}")
-                st.caption(f"筛选条件：主胜/平局概率与当前赔率偏差均在 ±{prob_tolerance:.0%} 范围内")
+            if real_h_prob is None:
+                st.info("历史赔率数据缺失，暂无法提供同赔率区间参考")
             else:
-                st.info("暂无完全匹配的历史样本，可适当放宽赔率范围参考")
+                mask_similar = (
+                    real_h_prob.between(user_h_prob - prob_tolerance, user_h_prob + prob_tolerance) &
+                    real_d_prob.between(user_d_prob - prob_tolerance, user_d_prob + prob_tolerance)
+                )
+                similar_matches = df_predict_all[mask_similar]
+                sim_total = len(similar_matches)
+
+                if sim_total > 0:
+                    sim_home_win = (similar_matches["match_result"] == "主队胜").mean()
+                    sim_draw = (similar_matches["match_result"] == "平局").mean()
+                    sim_away_win = (similar_matches["match_result"] == "客队胜").mean()
+
+                    sim_c1, sim_c2, sim_c3, sim_c4 = st.columns(4)
+                    sim_c1.metric("历史样本数", f"{sim_total} 场")
+                    sim_c2.metric("实际主胜率", f"{sim_home_win:.1%}")
+                    sim_c3.metric("实际平局率", f"{sim_draw:.1%}")
+                    sim_c4.metric("实际客胜率", f"{sim_away_win:.1%}")
+                    st.caption(f"筛选条件：主胜/平局概率与当前赔率偏差均在 ±{prob_tolerance:.0%} 范围内")
+                else:
+                    st.info("暂无完全匹配的历史样本，可适当放宽赔率范围参考")
 
 
 
@@ -673,5 +691,5 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
             })
             styled_detail = style_match_result_df(detail_df)
             st.dataframe(styled_detail, use_container_width=True)
-            st.caption(f"最终结果为融合输出（{pred_res['model_detail']['fusion_weight']}），验证集准确率64.7%")
+            st.caption(f"最终结果为融合输出（{pred_res['model_detail']['fusion_weight']}），模型经 54,728 场外样本 WF 金标准统一验证，整体准确率约 51.4%（主胜基准 45.8%）；注意高置信（≥60%）命中率约 71% 但固定ROI 仅 +0.22%，置信度高≠有正收益")
 

@@ -16,7 +16,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from match_predict import predict_match, FEATURE_COLS
 from streamlit_dash.feature_auto_build import build_feature_by_teams
 from feature_auto_build import get_team_recent_stats
-from team_mapping_v2 import LEAGUE_TEAM_MAP, CFG_2_DB_CODE
+from team_mapping_v2 import LEAGUE_TEAM_MAP, CFG_2_DB_CODE, get_team_cn_name_v2
+from common_config import LEAGUE_REGISTRY
 from common.usage_tracker import track
 from streamlit_dash.predict_module import save_prediction_to_db
 
@@ -29,30 +30,38 @@ ROOT_DIR = os.path.dirname(os.path.dirname(SCRIPT_PATH))
 DB_PATH = os.path.join(ROOT_DIR, "football.db")
 
 # 联赛显示配置
-LEAGUE_DISPLAY = {
-    "E0": {"name": "英超", "color": "#37003c"},
-    "D1": {"name": "德甲", "color": "#d20515"},
-    "LLA": {"name": "西甲", "color": "#ee8707"},
-    "SER": {"name": "意甲", "color": "#008fd7"},
-    "LIG": {"name": "法甲", "color": "#009045"},
-    "UCL": {"name": "欧冠", "color": "#0015a8"},
+# 【2026-08-05 修复：以 B体系 db_code（E0/D1/SP1/I1/F1）为主键，并兼容旧翻译码（LLA/SER/LIG），
+#  消除与 LEAGUE_REGISTRY 的码漂移；UCL 为赛程独有联赛，单独保留。】
+_LEAGUE_NAME_COLOR = {
+    "英超": "#37003c", "德甲": "#d20515", "西甲": "#ee8707",
+    "意甲": "#008fd7", "法甲": "#009045", "欧冠": "#0015a8",
 }
+LEAGUE_DISPLAY = {}
+for _v in LEAGUE_REGISTRY.values():
+    _disp = {"name": _v["name"], "color": _LEAGUE_NAME_COLOR.get(_v["name"], "#666")}
+    LEAGUE_DISPLAY[_v["db_code"]] = _disp
+    if _v.get("old_db_code"):
+        LEAGUE_DISPLAY[_v["old_db_code"]] = _disp
+LEAGUE_DISPLAY["UCL"] = {"name": "欧冠", "color": "#0015a8"}
 
-# 联赛编码 → 独热位索引（和训练时一致）
-LEAGUE_ONEHOT_IDX = {
-    "SER": 0,
-    "E0": 1,
-    "D1": 2,
-    "LIG": 3,
-    "LLA": 4,
-}
+
+def _league_match_codes(tab_code):
+    """联赛tab码 → 该联赛可能出现的全部码（db_code + 旧码），供筛选匹配"""
+    if tab_code == "UCL":
+        return ["UCL"]
+    for v in LEAGUE_REGISTRY.values():
+        if tab_code == v["db_code"]:
+            codes = [v["db_code"]]
+            if v.get("old_db_code") and v["old_db_code"] not in codes:
+                codes.append(v["old_db_code"])
+            return codes
+    return [tab_code]
 
 # 降级预测默认值（赔率、射门数据缺失时填充）
 # 降级预测默认赔率（原始赔率值，会自动去水转概率）
 DEFAULT_HOME_ODDS = 2.5
 DEFAULT_DRAW_ODDS = 3.5
 DEFAULT_AWAY_ODDS = 3.0
-DEFAULT_SHOT_DIFF = 0.0
 DEFAULT_SHOT_DIFF = 0.0
 
 LEAGUE_OPTIONS = list(LEAGUE_DISPLAY.keys())
@@ -67,14 +76,11 @@ def load_schedule_data():
     conn.close()
     df["match_date"] = pd.to_datetime(df["match_date"])
 
-    # 英文队名转中文
+    # 英文队名转中文（【2026-08-08 修复】改用统一映射接口 get_team_cn_name_v2：
+    #  内部完成 db_code→配置键 转换（SP1→LLA/I1→SER/F1→LIG）+ 归一化匹配（变音/前缀/全称/简写），
+    #  修复西甲/法甲/意甲仅精确匹配导致的中文队名未映射问题）
     def get_cn_name(league_db_code, eng_name):
-        cfg_code = DB_2_CFG.get(league_db_code)
-        if cfg_code and cfg_code in LEAGUE_TEAM_MAP:
-            team_map = LEAGUE_TEAM_MAP[cfg_code]
-            if eng_name in team_map:
-                return team_map[eng_name][1]
-        return eng_name  # 找不到映射保留原名
+        return get_team_cn_name_v2(league_db_code, eng_name, print_miss=False)
 
     df["home_team_cn"] = df.apply(lambda r: get_cn_name(r["league_code"], r["home_team"]), axis=1)
     df["away_team_cn"] = df.apply(lambda r: get_cn_name(r["league_code"], r["away_team"]), axis=1)
@@ -93,17 +99,16 @@ def load_historical_data():
 
 
 def build_pred_feature(df_hist, home_team, away_team, league_code):
-    """为单场比赛构建预测特征（34维完整特征，赔率用默认值降级填充）"""
-    # 赔率去水转真实概率
-    inv_sum = 1.0 / DEFAULT_HOME_ODDS + 1.0 / DEFAULT_DRAW_ODDS + 1.0 / DEFAULT_AWAY_ODDS
-    odds_draw_real = (1.0 / DEFAULT_DRAW_ODDS) / inv_sum
-    odds_lose_real = (1.0 / DEFAULT_AWAY_ODDS) / inv_sum
-
-    # 复用统一的特征构建函数，保证34维特征完整对齐
+    """为单场比赛构建预测特征（52/57维完整特征，赔率用默认值降级填充）。
+    【2026-08-07 口径修复：build_feature_by_teams 现接收【原始赔率】(home/draw/away 三个)，
+     内部自行去水算概率衍生特征；旧调用只传2个去水概率+误把0.0当 away_odds，会除零崩溃，
+     且与训练端 match_feature_final 特征口径失配。现改传三个默认原始赔率。】"""
+    # 复用统一的特征构建函数（降级预测用默认赔率，自动去水转概率）
     return build_feature_by_teams(
         df_hist, home_team, away_team,
-        odds_draw_real, odds_lose_real,
-        DEFAULT_SHOT_DIFF, league_code
+        DEFAULT_HOME_ODDS, DEFAULT_DRAW_ODDS, DEFAULT_AWAY_ODDS,
+        league_code,
+        use_value_features=True  # 【2026-08-08 修复：与 predict_module 一致开启身价特征(57维)；否则52维触发 predict_match 维度断言】
     )
 
 
@@ -124,10 +129,15 @@ def can_predict_match(row, df_hist):
         return False, "客队暂无映射"
 
     # 检查历史数据中是否有这两支球队
-    home_col = "home_team"
-    away_col = "away_team"
-    has_home = len(df_hist[df_hist[home_col] == home_cn]) > 0
-    has_away = len(df_hist[df_hist[away_col] == away_cn]) > 0
+    # 【2026-08-08 修复】match_feature_final 球队列实为 home_team_std/away_team_std 且【中英混杂】
+    #  （约80%中文、20%英文）。旧硬编码 home_team 会 KeyError；须【中英双向匹配】(isin)，
+    #   确保无论表内存中文还是英文都能判定"有历史数据"，与 build_feature_by_teams 的双向匹配一致。
+    home_col = "home_team_std" if "home_team_std" in df_hist.columns else "home_team"
+    away_col = "away_team_std" if "away_team_std" in df_hist.columns else "away_team"
+    home_keys = {row["home_team"], home_cn}
+    away_keys = {row["away_team"], away_cn}
+    has_home = len(df_hist[df_hist[home_col].isin(home_keys)]) > 0
+    has_away = len(df_hist[df_hist[away_col].isin(away_keys)]) > 0
 
     if not has_home or not has_away:
         return False, "历史数据不足"
@@ -230,7 +240,8 @@ def render_schedule_calendar(user_name=None):
         st.session_state.calendar_league = "all"
 
     league_tabs = st.columns([1, 1, 1, 1, 1, 1, 1, 3])
-    league_labels = [("all", "全部"), ("E0", "英超"), ("D1", "德甲"), ("LLA", "西甲"), ("SER", "意甲"), ("LIG", "法甲"), ("UCL", "欧冠")]
+    # 【2026-08-05 修复：联赛tab改用 B体系 db_code，筛选时同时匹配 db_code 与旧码】
+    league_labels = [("all", "全部")] + [(v["db_code"], v["name"]) for v in LEAGUE_REGISTRY.values()] + [("UCL", "欧冠")]
 
     for i, (code, name) in enumerate(league_labels):
         is_active = st.session_state.calendar_league == code
@@ -238,11 +249,11 @@ def render_schedule_calendar(user_name=None):
         if league_tabs[i].button(name, key=f"league_tab_{code}", type=btn_type, use_container_width=True):
             st.session_state.calendar_league = code
 
-    # 根据标签生成筛选列表
+    # 根据标签生成筛选列表（每个联赛同时匹配 db_code 与旧码，兼容历史数据）
     if st.session_state.calendar_league == "all":
         selected_leagues = LEAGUE_OPTIONS
     else:
-        selected_leagues = [st.session_state.calendar_league]
+        selected_leagues = _league_match_codes(st.session_state.calendar_league)
 
     st.divider()
 
@@ -378,8 +389,8 @@ def render_schedule_calendar(user_name=None):
             # 统计
             high_conf = len(df_batch[df_batch['置信度'] >= 0.6])
             very_high = len(df_batch[df_batch['置信度'] >= 0.7])
-            st.caption(f"💡 ≥60%置信度 {high_conf} 场（预期准确率~85%），≥70%置信度 {very_high} 场（预期准确率~91%）")
-            st.caption("⚠️ 赛程预测缺少赔率和射门数据，为降级预测，仅供参考")
+            st.caption(f"💡 置信度=该档位历史命中率（WF外样本验证）：≥60%命中率 {high_conf} 场，≥70%命中率 {very_high} 场")
+            st.caption("⚠️ 赛程预测缺少赔率和射门数据，为降级预测；AI建议仅供参考，是否出手由您独立判断")
 
     # ========== 按天卡片式展示 ==========
     WEEKDAY_CN = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
@@ -532,7 +543,7 @@ def render_match_row(row, df_hist):
                 st.markdown(
                     f"<div style='background:#f0f7ff;padding:10px;border-radius:8px;margin:8px 0;'>"
                     f"<b>预测结果：{pred_result['predict_result']}</b> "
-                    f"<span style='color:#666;'>（置信度 {pred_result['confidence']:.1%}）</span>"
+                    f"<span style='color:#666;'>（置信度 {pred_result['confidence']:.1%} = 该档位历史命中率）</span>"
                     f"<br><span style='font-size:13px;color:#888;'>"
                     f"主胜 {pred_result['prob_home_win']:.1%} · "
                     f"平局 {pred_result['prob_draw']:.1%} · "
@@ -624,7 +635,7 @@ def render_match_card(row, df_hist, user_name=None):
                     f"<div style='font-size:14px;font-weight:600;color:{result_color}'>"
                     f"→ {pred_result['predict_result']}"
                     f"<span style='color:#666;font-weight:400;font-size:12px;margin-left:6px'>"
-                    f"置信度 {pred_result['confidence']:.1%}"
+                    f"置信度 {pred_result['confidence']:.1%}（历史命中）"
                     f"</span></div>"
                     f"<div style='font-size:11px;color:#999;margin-top:3px'>"
                     f"主胜 {pred_result['prob_home_win']:.0%} · 平 {pred_result['prob_draw']:.0%} · 客胜 {pred_result['prob_away_win']:.0%}"
@@ -640,8 +651,10 @@ def render_match_card(row, df_hist, user_name=None):
                     st.markdown(f"**共识等级：{intent['consensus_label']}**")
                     for ai_name, ai_data in intent["intents"].items():
                         status = "✅ 建议关注" if ai_data["will_bet"] else "❌ 观望"
-                        st.caption(f"{ai_name}：{status}")
-                    st.caption(f"模型融合：{pred_result.get('fusion_weight', 'LGB 55% + 泊松 30% + 平局专项 5%')}")
+                        reason = ai_data.get("reason", "")
+                        st.caption(f"{ai_name}：{status}{f'（{reason}）' if reason else ''}")
+                    st.caption(f"模型融合：{pred_result.get('model_detail', {}).get('fusion_weight', 'LGB 55% + 泊松 30% + 平局专项 15%')}")
+                    st.caption("⚠️ 置信度=该档位历史命中率（WF外样本验证）；AI 建议仅供数据参考，是否出手由您独立判断，AI 不替您做决定")
         else:
             st.button("🔮 预测", key=f"btn_card_pred_{match_id}", disabled=True, help=reason, use_container_width=True)
 

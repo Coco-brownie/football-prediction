@@ -31,6 +31,8 @@ from common.data_loader import (
 )
 from common.style import render_confidence_badge, get_result_color, apply_global_style
 from common.usage_tracker import track
+# 【2026-08-05 修复：联赛码从 LEAGUE_REGISTRY 派生，消除前端旧码（LLA/SER/LIG）漂移】
+from common_config import get_all_known_codes, league_name_by_code
 
 # 应用全局美化样式
 apply_global_style()
@@ -65,20 +67,21 @@ for cfg_code, team_map in LEAGUE_TEAM_MAP.items():
         cn_2_std[cn_name] = eng_std
 
 # 从数据本身补充映射（兜底，确保无缺失）
-home_cn_col = "home_team" if "home_team_std" in df_all.columns else None
+home_cn_col = "home_team" if "home_team" in df_all.columns else None
 if home_cn_col:
     for _, row in df_all[[home_col, home_cn_col]].drop_duplicates().iterrows():
         std = row[home_col]
         cn = row[home_cn_col]
         if std and cn and std not in std_2_cn:
             std_2_cn[std] = cn
-    away_cn_col = "away_team" if "away_team_std" in df_all.columns else None
-    if away_cn_col:
-        for _, row in df_all[[away_col, away_cn_col]].drop_duplicates().iterrows():
-            std = row[away_col]
-            cn = row[away_cn_col]
-            if std and cn and std not in std_2_cn:
-                std_2_cn[std] = cn
+
+away_cn_col = "away_team" if "away_team" in df_all.columns else None
+if away_cn_col:
+    for _, row in df_all[[away_col, away_cn_col]].drop_duplicates().iterrows():
+        std = row[away_col]
+        cn = row[away_cn_col]
+        if std and cn and std not in std_2_cn:
+            std_2_cn[std] = cn
 
 # ==================== 主区域 ====================
 st.title("⚽ 足球赛事预测中心")
@@ -136,9 +139,9 @@ with col2:
 
 # 卡片3：模型验证准确率
 with col3:
-    st.metric("🤖 模型验证准确率", "53.6%")
-    st.caption("基于 3 万场历史数据")
-    st.caption("Walk Forward金标准 · 持续优化中")
+    st.metric("🤖 模型验证准确率", "51.4%")
+    st.caption("基于 54,728 场外样本 · WF金标准统一验证")
+    st.caption("argmax口径 · 主胜基准 45.8% · 详见统一验证报告")
 
 st.divider()
 
@@ -173,8 +176,8 @@ with tab_calendar:
             (df_schedule["match_date"].dt.normalize() <= end_date)
         ].copy().sort_values("match_date")
         
-        # 过滤五大联赛（有模型的）
-        valid_leagues = ['E0', 'D1', 'LLA', 'SER', 'LIG']
+        # 过滤五大联赛（有模型的；兼容 B体系 db_code 与旧翻译码）
+        valid_leagues = get_all_known_codes()
         df_upcoming = df_upcoming[df_upcoming["league_code"].isin(valid_leagues)]
         
         st.info(f"📅 未来 {days_ahead} 天共 {len(df_upcoming)} 场五大联赛赛事")
@@ -187,7 +190,7 @@ with tab_calendar:
                 "🦅 猎鹰Plus版",
                 options=falcon_plus_options,
                 index=0,
-                help="冷门猎手专精：基础版全联赛，德甲专精ROI 60%+，英超专精ROI +27%"
+                help="冷门猎手专精：基础版全联赛固定ROI +15.79%（✅成立）；德甲/英超专精外样本⚠️存疑（+6.85% / +23.51%），详见统一验证报告"
             )
         with col_f2:
             if falcon_plus_version != "关闭":
@@ -399,7 +402,7 @@ with tab_track:
             # 各联赛准确率对比
             if total_v > 0 and "league_code" in verified.columns:
                 st.markdown("##### 🏆 各联赛预测准确率对比")
-                db_code_names = {"E0": "英超", "D1": "德甲", "LLA": "西甲", "SER": "意甲", "LIG": "法甲"}
+                db_code_names = {code: league_name_by_code(code) for code in get_all_known_codes()}
                 league_acc_list = []
                 league_acc_chart = []
                 for lg in sorted(verified["league_code"].dropna().unique()):
@@ -524,7 +527,7 @@ with tab_track:
             st.dataframe(df_show, use_container_width=True, hide_index=True)
 
 # 底部更新日志（默认折叠，不占空间）
-APP_VERSION = "v1.0.8"
+APP_VERSION = "v1.3.0"
 st.divider()
 
 # 免责声明
@@ -535,6 +538,32 @@ st.warning("""
 
 with st.expander(f"📝 更新日志 · {APP_VERSION} 🆕", expanded=False):
     st.markdown("""
+**v1.3.0 — 2026-08-08（看板全面修复 · 方案A：置信度改历史命中率）**
+- 🔥 **方案A：置信度 ≠ 主胜概率**——置信度改为查「WF 分桶历史真实命中率」（根库 wf_confidence_accuracy）：拜仁主胜 52.3% → 置信度 55.2%；巴萨主胜 48.6% → 置信度 41.4%。语义＝「这个档位历史上命中了多少」，更保守真实
+- 🤖 **AI 出手参考保守化**：三 AI 阈值梯度（激进50% / 中立55% / 保守60%，历史命中率口径）+ 平局整体压一档；纯参考、绝不替您决定出手（UI 明确标注「是否出手由您独立判断」）
+- 🧩 预测/批量预测失效根治：match_feature_final 中英混杂队名 → feature_auto_build 中英双向匹配
+- 🏷 27 支遗留英文队名映射补齐（Reggina / MGladbach / Cottbus 等），看板中文全覆盖
+- 🗄 多库根治：数据看板 3 处误连次库修复，全看板统一连接根库 football.db
+- 📐 赛事日历特征 52→57 维对齐（补身价特征），预测不再崩溃
+- 📊 新增验证表：wf_confidence_accuracy（置信度分桶 vs 真实准确率）+ league_independent_wf（联赛难度排行）
+- 🔴 身价特征 value_ratio 3981 倍漂移修复：ASOF 快照重建 + 500万下限清洗，全模型重训 57 维
+
+**v1.2.3 — 2026-08-03（第三版审计紧急修复）**
+- 🔥 P0 特征顺序错位修复：在线端/平局模型/校准器三处顺序统一，联赛独热放最后
+- 全链路统一顺序：基础→交锋→概率→平局率→ELO→ELO扩展→时间衰减→联赛→身价
+- 统一出口：全部从 common_config.get_feature_list() 读取
+- P1：daily_verify 启动即崩、backtest LEAGUE_FIX_COLS 取错列 修复
+- P2：身价特征统一出口、前端合规化（凯利弱化为理论参考）、联赛独立模型删除
+
+**v1.2.2 — 2026-08-02（全量数据扩容 + 转会窗alpha验证）**
+- 数据扩容：53,308 场（2000-2026），样本量 +32%
+- 身价特征 v2：中性默认值方案，覆盖率 68.2%
+- 转会窗 alpha：Elo差+身价差双重验证，长期存在（9月 +17.9% vs 其他月 -5.8%）
+
+**v1.2.0 — 2026-07-30（平局专项优化·第一阶段）**
+- 平局二分类模型 ROI：-2.23% → +7.32%（17 个最优特征）
+- 盈利赛季 6/9，赛季均 ROI +8.09%
+
 **v1.0.8 — 2026-07-30（猎鹰Plus版）**
 - 猎鹰策略新增双Pro模式：德甲专精/英超专精
 - 模型验证页集成Pro版开关，互斥切换
