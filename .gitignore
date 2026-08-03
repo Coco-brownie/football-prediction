@@ -4,10 +4,12 @@ __pycache__/
 *.pyo
 *.pyd
 
-# ========== 根目录py文件（只保留核心两个） ==========
+# ========== 根目录py文件（核心 + common_config，common_config 是全模块依赖必须上传） ==========
 /*.py
 !/match_predict.py
 !/team_mapping_v2.py
+!/common_config.py
+!/export_wf_conf_table.py
 
 # ========== IDE 配置 ==========
 .vscode/
@@ -41,6 +43,21 @@ model_backup_*/
 【策略研究】/
 【文档】/
 
+# ========== 离线构建/维护目录（不上传，仅本地执行） ==========
+backtest/
+data/
+features/
+tools/
+training/
+logs/
+
+# ========== 根目录临时产物（不上传） ==========
+/league_scaler.pkl
+/verify_fixes_result.txt
+/verify_fixes_running.txt
+/football.db.bak_repair
+/football.db.*
+
 # ========== 临时文件 ==========
 *.tmp
 *.log
@@ -48,8 +65,9 @@ model_backup_*/
 *.old
 
 # ========== 本地配置 ==========
-config.json
+# config.json：特征定义+模型参数权威源（52+5=57维，无敏感信息，运行必需，上传）
 定时任务配置说明.md
+!config.json
 
 # 模型配置文件保留
 !model/poisson_features.json

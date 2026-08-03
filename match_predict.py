@@ -226,29 +226,50 @@ _WF_CONF_TABLE = None
 _WF_CONF_TABLE_LOADED = False
 
 def _load_wf_conf_table():
-    """启动后首次调用时从根库读取 wf_confidence_accuracy（6档），缓存；失败返回 None"""
+    """读取 wf_confidence_accuracy（6档），缓存；失败返回 None
+    【2026-08-08 收敛：优先读 model/wf_confidence_accuracy.json（随仓库分发，
+      克隆无需 165MB 的 football.db）；db 查询仅为本地旧环境兜底保留。】"""
     global _WF_CONF_TABLE, _WF_CONF_TABLE_LOADED
     if _WF_CONF_TABLE_LOADED:
         return _WF_CONF_TABLE
     _WF_CONF_TABLE_LOADED = True
+    # 档位下界（与 backtest/generate_dashboard_tables.py 分桶严格一致）
+    _BOUNDS = {"<50%": 0.0, "50-60%": 0.50, "60-70%": 0.60,
+               "70-80%": 0.70, "80-90%": 0.80, "≥90%": 0.90}
+    table = None
+    # ① 优先读 JSON（随仓库分发，5KB 级别）
     try:
-        import sqlite3
-        from common_config import get_path
-        conn = sqlite3.connect(get_path("db_path"))
-        df = pd.read_sql("SELECT 置信度区间, 准确率 FROM wf_confidence_accuracy", conn)
-        conn.close()
-        # 档位下界（与 backtest/generate_dashboard_tables.py 分桶严格一致）
-        _BOUNDS = {"<50%": 0.0, "50-60%": 0.50, "60-70%": 0.60,
-                   "70-80%": 0.70, "80-90%": 0.80, "≥90%": 0.90}
-        table = []
-        for _, r in df.iterrows():
-            lab = str(r["置信度区间"]).strip()
-            if lab in _BOUNDS:
-                table.append((_BOUNDS[lab], float(r["准确率"])))
-        table.sort()
-        _WF_CONF_TABLE = table if table else None
+        json_path = os.path.join(MODEL_DIR, "wf_confidence_accuracy.json")
+        if os.path.exists(json_path):
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            tmp = []
+            for item in data:
+                lab = str(item.get("置信度区间", "")).strip()
+                if lab in _BOUNDS:
+                    tmp.append((_BOUNDS[lab], float(item.get("准确率", 0))))
+            tmp.sort()
+            table = tmp if tmp else None
     except Exception:
-        _WF_CONF_TABLE = None
+        table = None
+    # ② 兜底：根库查询（本地有 db 时）
+    if not table:
+        try:
+            import sqlite3
+            from common_config import get_path
+            conn = sqlite3.connect(get_path("db_path"))
+            df = pd.read_sql("SELECT 置信度区间, 准确率 FROM wf_confidence_accuracy", conn)
+            conn.close()
+            tmp = []
+            for _, r in df.iterrows():
+                lab = str(r["置信度区间"]).strip()
+                if lab in _BOUNDS:
+                    tmp.append((_BOUNDS[lab], float(r["准确率"])))
+            tmp.sort()
+            table = tmp if tmp else None
+        except Exception:
+            table = None
+    _WF_CONF_TABLE = table
     return _WF_CONF_TABLE
 
 def _get_confidence(max_prob):

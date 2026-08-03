@@ -14,7 +14,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(SCRIPT_PATH))
 DB_PATH = os.path.join(ROOT_DIR, "football.db")
 
 sys.path.insert(0, ROOT_DIR)
-from team_mapping_v2 import LEAGUE_CFG, CFG_2_DB_CODE, LEAGUE_TEAM_MAP
+from team_mapping_v2 import LEAGUE_CFG, CFG_2_DB_CODE, LEAGUE_TEAM_MAP, get_team_cn_name_v2
 
 # 数据库编码 -> 配置编码
 DB_2_CFG = {v: k for k, v in CFG_2_DB_CODE.items()}
@@ -38,14 +38,10 @@ def load_schedule_data(db_path=DB_PATH):
     conn.close()
     df["match_date"] = pd.to_datetime(df["match_date"])
 
-    # 英文队名转中文
+    # 英文队名转中文（【2026-08-08 修复】改用统一映射接口，支持 db_code→配置键转换 + 归一化匹配，
+    #  修复西甲/法甲/意甲仅精确匹配导致的中文队名未映射问题）
     def get_cn_name(league_db_code, eng_name):
-        cfg_code = DB_2_CFG.get(league_db_code)
-        if cfg_code and cfg_code in LEAGUE_TEAM_MAP:
-            team_map = LEAGUE_TEAM_MAP[cfg_code]
-            if eng_name in team_map:
-                return team_map[eng_name][1]
-        return eng_name
+        return get_team_cn_name_v2(league_db_code, eng_name, print_miss=False)
 
     df["home_team_cn"] = df.apply(lambda r: get_cn_name(r["league_code"], r["home_team"]), axis=1)
     df["away_team_cn"] = df.apply(lambda r: get_cn_name(r["league_code"], r["away_team"]), axis=1)

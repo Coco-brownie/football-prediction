@@ -5,6 +5,41 @@
 # 2026-07-24 09:55 修正：删除西甲错误桑德兰、清理重复冗余键
 # 2026-07-24 12:00 重大修复：关闭跨联赛匹配；补齐五大联赛全部缺失球队
 # 2026-07-24 19:30 兼容修复：数据库球队为中文，所有联赛追加中文队名key，中英文双匹配
+def _norm_team_name(s):
+    """内部辅助：归一化队名（变音/前缀/空格）"""
+    if not isinstance(s, str):
+        return ""
+    s = s.strip()
+    # 1. 变音映射
+    accent_map = {
+        "á": "a", "à": "a", "ä": "a", "â": "a", "ā": "a",
+        "é": "e", "è": "e", "ê": "e", "ë": "e", "ē": "e",
+        "í": "i", "ì": "i", "î": "i", "ï": "i",
+        "ó": "o", "ò": "o", "ô": "o", "ö": "o", "ō": "o",
+        "ú": "u", "ù": "u", "û": "u", "ü": "u", "ū": "u",
+        "ç": "c", "ñ": "n", "ß": "ss",
+        "Á": "A", "À": "A", "Ä": "A", "Â": "A",
+        "É": "E", "È": "E", "Ê": "E", "Ë": "E",
+        "Í": "I", "Ì": "I", "Î": "I", "Ï": "I",
+        "Ó": "O", "Ò": "O", "Ô": "O", "Ö": "O",
+        "Ú": "U", "Ù": "U", "Û": "U", "Ü": "U",
+        "Ç": "C", "Ñ": "N",
+    }
+    s = "".join(accent_map.get(c, c) for c in s)
+
+    # 2. 统一常见前缀
+    prefixes = [
+        "1. FC", "FC", "CF", "CD", "RCD", "SSC",
+        "AC", "AS", "US", "SV", "AFC", "GFC", "GF38"
+    ]
+    for p in prefixes:
+        if s.startswith(p + " "):
+            s = s[len(p) + 1:]
+            break
+
+    # 3. 去多余空格、转小写
+    s = " ".join(s.split()).lower()
+    return s
 
 LEAGUE_TEAM_MAP = {
     # ==================== 英超 EPL 完整全量（中英文双key兼容） ====================
@@ -36,6 +71,7 @@ LEAGUE_TEAM_MAP = {
         "纽卡斯尔联": ("Newcastle United", "纽卡斯尔联"),
 
         "Brighton": ("Brighton & Hove Albion", "布莱顿"),
+        "Brighton & Hove Albion": ("Brighton & Hove Albion", "布莱顿"),
         "布莱顿": ("Brighton & Hove Albion", "布莱顿"),
 
         "Crystal Palace": ("Crystal Palace", "水晶宫"),
@@ -76,6 +112,7 @@ LEAGUE_TEAM_MAP = {
         "谢菲尔德联": ("Sheffield United", "谢菲尔德联"),
 
         "West Brom": ("West Bromwich Albion", "西布朗"),
+        "West Bromwich Albion": ("West Bromwich Albion", "西布朗"),
         "西布朗": ("West Bromwich Albion", "西布朗"),
 
         "West Ham": ("West Ham United", "西汉姆联"),
@@ -94,21 +131,27 @@ LEAGUE_TEAM_MAP = {
         "伯恩利": ("Burnley", "伯恩利"),
 
         "Cardiff": ("Cardiff City", "加的夫城"),
+        "Cardiff City": ("Cardiff City", "加的夫城"),
         "加的夫城": ("Cardiff City", "加的夫城"),
 
         "Huddersfield": ("Huddersfield Town", "哈德斯菲尔德"),
+        "Huddersfield Town": ("Huddersfield Town", "哈德斯菲尔德"),
         "哈德斯菲尔德": ("Huddersfield Town", "哈德斯菲尔德"),
 
         "Luton": ("Luton Town", "卢顿"),
+        "Luton Town": ("Luton Town", "卢顿"),
         "卢顿": ("Luton Town", "卢顿"),
 
         "Norwich": ("Norwich City", "诺维奇"),
+        "Norwich City": ("Norwich City", "诺维奇"),
         "诺维奇": ("Norwich City", "诺维奇"),
 
         "Stoke": ("Stoke City", "斯托克城"),
+        "Stoke City": ("Stoke City", "斯托克城"),
         "斯托克城": ("Stoke City", "斯托克城"),
 
         "Swansea": ("Swansea City", "斯旺西"),
+        "Swansea City": ("Swansea City", "斯旺西"),
         "斯旺西": ("Swansea City", "斯旺西"),
 
         "Watford": ("Watford", "沃特福德"),
@@ -116,6 +159,10 @@ LEAGUE_TEAM_MAP = {
 
         "Sunderland": ("Sunderland", "桑德兰"),
         "桑德兰": ("Sunderland", "桑德兰"),
+
+        "Wigan": ("Wigan Athletic", "维冈竞技"),
+        "Wigan Athletic": ("Wigan Athletic", "维冈竞技"),
+        "维冈竞技": ("Wigan Athletic", "维冈竞技"),
 
         # 2025-26赛季升班马
         "Ipswich": ("Ipswich Town", "伊普斯维奇"),
@@ -157,6 +204,14 @@ LEAGUE_TEAM_MAP = {
 
         "Wigan": ("Wigan Athletic", "维冈竞技"),
         "维冈竞技": ("Wigan Athletic", "维冈竞技"),
+
+        "Birmingham City": ("Birmingham City", "伯明翰"),
+        "Blackburn Rovers": ("Blackburn Rovers", "布莱克本"),
+        "Blackpool": ("Blackpool", "布莱克浦"),
+        "Bolton Wanderers": ("Bolton Wanderers", "博尔顿"),
+        "Portsmouth": ("Portsmouth", "朴茨茅斯"),
+        "Queens Park Rangers": ("Queens Park Rangers", "女王公园巡游者"),
+        "Queen's Park Rangers": ("Queens Park Rangers", "女王公园巡游者"),
     },
 
     # ==================== 西甲 LLA 完整全量（中英文双key兼容） ====================
@@ -286,7 +341,21 @@ LEAGUE_TEAM_MAP = {
         "Athletic Bilbao": ("Athletic Bilbao", "毕尔巴鄂竞技"),
         "Real Sociedad": ("Real Sociedad", "皇家社会"),
         "Racing Santander": ("Racing Santander", "桑坦德竞技"),
-        "桑坦德竞技": ("Racing Santander", "桑坦德竞技")
+        "桑坦德竞技": ("Racing Santander", "桑坦德竞技"),
+        "Atlético Madrid": ("Atlético Madrid", "马德里竞技"),
+        "Cádiz CF": ("Cádiz", "加的斯"),
+        "Córdoba CF": ("Córdoba CF", "科尔多瓦"),
+        "Deportivo La Coruña": ("Deportivo La Coruña", "拉科鲁尼亚"),
+        "Hércules CF": ("Hércules CF", "赫库斯"),
+        "RCD Espanyol": ("RCD Espanyol", "西班牙人"),
+        "Racing Santander": ("Racing Santander", "桑坦德竞技"),
+        "Sporting Gijón": ("Sporting Gijón", "希洪竞技"),
+        "Xerez CD": ("Xerez CD", "赫雷斯"),
+        "CD Tenerife": ("CD Tenerife", "特内里费"),
+        "Leganés": ("Leganés", "莱加内斯"),
+        "Málaga CF": ("Málaga", "马拉加"),
+        "Real Oviedo": ("Real Oviedo", "奥维耶多"),
+        "Real Zaragoza": ("Real Zaragoza", "萨拉戈萨"),
 
     },
 
@@ -368,6 +437,7 @@ LEAGUE_TEAM_MAP = {
         "柏林联合": ("Union Berlin", "柏林联合"),
 
         "Bochum": ("VfL Bochum", "波鸿"),
+        "VfL Bochum": ("VfL Bochum", "波鸿"),
         "波鸿": ("VfL Bochum", "波鸿"),
 
         "Heidenheim": ("1. FC Heidenheim", "海登海姆"),
@@ -380,13 +450,35 @@ LEAGUE_TEAM_MAP = {
         "杜塞尔多夫": ("Fortuna Düsseldorf", "杜塞尔多夫"),
 
         "Braunschweig": ("Eintracht Braunschweig", "布伦瑞克"),
+        "Eintracht Braunschweig": ("Eintracht Braunschweig", "布伦瑞克"),
         "布伦瑞克": ("Eintracht Braunschweig", "布伦瑞克"),
 
         "Ingolstadt": ("FC Ingolstadt 04", "因戈尔施塔特"),
+        "FC Ingolstadt 04": ("FC Ingolstadt 04", "因戈尔施塔特"),
         "因戈尔施塔特": ("FC Ingolstadt 04", "因戈尔施塔特"),
 
         "Kaiserslautern": ("1. FC Kaiserslautern", "凯泽斯劳滕"),
         "凯泽斯劳滕": ("1. FC Kaiserslautern", "凯泽斯劳滕"),
+
+        "Bielefeld": ("Arminia Bielefeld", "比勒费尔德"),
+        "Arminia Bielefeld": ("Arminia Bielefeld", "比勒费尔德"),
+        "比勒费尔德": ("Arminia Bielefeld", "比勒费尔德"),
+
+        "Darmstadt": ("Darmstadt 98", "达姆施塔特"),
+        "Darmstadt 98": ("Darmstadt 98", "达姆施塔特"),
+        "达姆施塔特": ("Darmstadt 98", "达姆施塔特"),
+
+        "Hannover": ("Hannover 96", "汉诺威96"),
+        "Hannover 96": ("Hannover 96", "汉诺威96"),
+        "汉诺威96": ("Hannover 96", "汉诺威96"),
+
+        "Hertha": ("Hertha Berlin", "柏林赫塔"),
+        "Hertha Berlin": ("Hertha Berlin", "柏林赫塔"),
+        "柏林赫塔": ("Hertha Berlin", "柏林赫塔"),
+
+        "Wolfsburg": ("VfL Wolfsburg", "沃尔夫斯堡"),
+        "VfL Wolfsburg": ("VfL Wolfsburg", "沃尔夫斯堡"),
+        "沃尔夫斯堡": ("VfL Wolfsburg", "沃尔夫斯堡"),
 
         # ===== 赛程CSV完整名称兼容补充 =====
         "Bayern München": ("Bayern Munich", "拜仁慕尼黑"),
@@ -406,7 +498,13 @@ LEAGUE_TEAM_MAP = {
         "Hamburger SV": ("Hamburger SV", "汉堡"),
         "SC Paderborn 07": ("Paderborn", "帕德博恩"),
         "SV Elversberg": ("SV Elversberg", "埃尔弗斯贝格"),
-        "埃尔弗斯贝格": ("SV Elversberg", "埃尔弗斯贝格")
+        "埃尔弗斯贝格": ("SV Elversberg", "埃尔弗斯贝格"),
+        "1. FC Kaiserslautern": ("1. FC Kaiserslautern", "凯泽斯劳滕"),
+        "1. FC Nürnberg": ("1. FC Nürnberg", "纽伦堡"),
+        "FC St. Pauli": ("FC St. Pauli", "圣保利"),
+        "Fortuna Düsseldorf": ("Fortuna Düsseldorf", "杜塞尔多夫"),
+        "Greuther Fürth": ("Greuther Fürth", "菲尔特"),
+        "1. FC Köln": ("FC Koln", "科隆"),
     },
 
     # ==================== 意甲 SER 完整全量（中英文双key兼容） ====================
@@ -477,6 +575,7 @@ LEAGUE_TEAM_MAP = {
         "威尼斯": ("Venezia", "威尼斯"),
 
         "Verona": ("Hellas Verona", "维罗纳"),
+        "Hellas Verona": ("Hellas Verona", "维罗纳"),
         "维罗纳": ("Hellas Verona", "维罗纳"),
 
         "Lazio": ("Lazio", "拉齐奥"),
@@ -539,7 +638,14 @@ LEAGUE_TEAM_MAP = {
         # ===== 赛程CSV完整名称兼容补充 =====
         "AS Roma": ("AS Roma", "罗马"),
         "Hellas Verona": ("Hellas Verona", "维罗纳"),
-        "Inter Milan": ("Inter Milan", "国际米兰")
+        "Inter Milan": ("Inter Milan", "国际米兰"),
+        "Novara Calcio": ("Novara Calcio", "诺瓦拉"),
+        "SSC Bari": ("SSC Bari", "巴里"),
+        "Calcio Catania": ("Calcio Catania", "卡塔尼亚"),
+        "Carpi FC": ("Carpi FC", "卡尔皮"),
+        "Delfino Pescara 1936": ("Delfino Pescara 1936", "佩斯卡拉"),
+        "Robur Siena": ("Robur Siena", "锡耶纳"),
+        "US Città di Palermo": ("US Città di Palermo", "巴勒莫"),
     },
 
     # ==================== 法甲 LIG 完整全量（中英文双key兼容） ====================
@@ -655,22 +761,93 @@ LEAGUE_TEAM_MAP = {
         "格勒诺布尔": ("GF38 Grenoble", "格勒诺布尔"),
 
         "Nancy": ("AS Nancy Lorraine", "南锡"),
+        "AS Nancy Lorraine": ("AS Nancy Lorraine", "南锡"),
         "南锡": ("AS Nancy Lorraine", "南锡"),
 
         "Sochaux": ("FC Sochaux-Montbéliard", "索肖"),
+        "FC Sochaux-Montbéliard": ("FC Sochaux-Montbéliard", "索肖"),
         "索肖": ("FC Sochaux-Montbéliard", "索肖"),
         
         "Valenciennes": ("Valenciennes FC", "瓦朗谢讷"),
+        "Valenciennes FC": ("Valenciennes FC", "瓦朗谢讷"),
         "瓦朗谢讷": ("Valenciennes FC", "瓦朗谢讷"),
+
+        "Bastia": ("SC Bastia", "巴斯蒂亚"),
+        "SC Bastia": ("SC Bastia", "巴斯蒂亚"),
+        "巴斯蒂亚": ("SC Bastia", "巴斯蒂亚"),
+
+        "Brest": ("Brest", "布雷斯特"),
+        "Stade Brestois 29": ("Brest", "布雷斯特"),
+        "布雷斯特": ("Brest", "布雷斯特"),
+
+        "Troyes": ("Troyes", "特鲁瓦"),
+        "ESTAC Troyes": ("Troyes", "特鲁瓦"),
+        "特鲁瓦": ("Troyes", "特鲁瓦"),
 
         # ===== 赛程CSV完整名称兼容补充 =====
         "Paris Saint Germain": ("Paris Saint-Germain", "巴黎圣日耳曼"),
         "Stade Brestois 29": ("Brest", "布雷斯特"),
         "Estac Troyes": ("Troyes", "特鲁瓦"),
         "Le Mans": ("Le Mans", "勒芒"),
-        "勒芒": ("Le Mans", "勒芒")
+        "勒芒": ("Le Mans", "勒芒"),
+
+        "Evian Thonon Gaillard FC": ("Evian Thonon Gaillard FC", "埃维昂"),
+        "GF38 Grenoble": ("GF38 Grenoble", "格勒诺布尔"),
+        "GFC Ajaccio": ("GFC Ajaccio", "阿雅克肖GFCO"),
+        "Le Mans": ("Le Mans", "勒芒"),
+        "US Boulogne": ("US Boulogne", "布洛涅"),
+        "AC Arles-Avignon": ("AC Arles-Avignon", "阿尔勒"),
+        "Saint-Étienne": ("Saint-Étienne", "圣埃蒂安"),
     }
 }
+
+# 【2026-08-08 补充：历史遗留英文队名映射】match_feature_final 球队列中英混杂（约80%中文、20%英文），
+#  以下 27 支是数据中直接以英文存储、原映射表缺失的队名（看板比赛分析/球队详情/预测双向匹配会用到），
+#  以数据里的确切写法为 key，追加进对应联赛 dict（不覆盖已有映射）。
+_LEGACY_MISSING_TEAMS = {
+    "BUN": {
+        "MGladbach": ("Borussia M'gladbach", "门兴格拉德巴赫"),
+        "Cottbus": ("Energie Cottbus", "科特布斯"),
+        "Hansa Rostock": ("FC Hansa Rostock", "罗斯托克"),
+        "Munich 1860": ("TSV 1860 München", "慕尼黑1860"),
+        "Karlsruhe": ("Karlsruher SC", "卡尔斯鲁厄"),
+        "Duisburg": ("MSV Duisburg", "杜伊斯堡"),
+        "Aachen": ("Alemannia Aachen", "亚琛"),
+        "Unterhaching": ("SpVgg Unterhaching", "翁特哈兴"),
+    },
+    "SER": {
+        "Reggina": ("Reggina", "雷吉纳"),
+        "Messina": ("Messina", "墨西拿"),
+        "Perugia": ("Perugia", "佩鲁贾"),
+        "Ascoli": ("Ascoli", "阿斯科利"),
+        "Piacenza": ("Piacenza", "皮亚琴察"),
+        "Modena": ("Modena", "摩德纳"),
+        "Treviso": ("Treviso", "特雷维索"),
+        "Vicenza": ("Vicenza", "维琴察"),
+        "Ancona": ("Ancona", "安科纳"),
+    },
+    "EPL": {
+        "Charlton": ("Charlton Athletic", "查尔顿"),
+        "Derby": ("Derby County", "德比郡"),
+        "Nottm Forest": ("Nottingham Forest", "诺丁汉森林"),
+        "Bradford": ("Bradford City", "布拉德福德"),
+    },
+    "LLA": {
+        "Recreativo": ("Recreativo Huelva", "维尔瓦"),
+        "Numancia": ("Numancia", "努曼西亚"),
+        "Murcia": ("Real Murcia", "穆尔西亚"),
+        "Albacete": ("Albacete", "阿尔瓦塞特"),
+    },
+    "LIG": {
+        "Sedan": ("CS Sedan", "色当"),
+        "Istres": ("Istres FC", "伊斯特尔"),
+    },
+}
+for _lg, _m in _LEGACY_MISSING_TEAMS.items():
+    LEAGUE_TEAM_MAP.setdefault(_lg, {})
+    for _k, _v in _m.items():
+        if _k not in LEAGUE_TEAM_MAP[_lg]:
+            LEAGUE_TEAM_MAP[_lg][_k] = _v
 
 # 联赛基础信息
 LEAGUE_CFG = {
@@ -682,17 +859,14 @@ LEAGUE_CFG = {
 }
 
 # ========== 联赛编码统一转换（配置键 ↔ 数据库原始编码） ==========
+# 【2026-08-05 统一】全部从 common_config.LEAGUE_REGISTRY 派生，全项目唯一编码出口。
 # 配置键（前端下拉用）：EPL / BUN / LLA / SER / LIG
-# 数据库编码（match_feature_final 表内）：E0 / D1 / LLA / SER / LIG
-CFG_2_DB_CODE = {
-    "EPL": "E0",
-    "BUN": "D1",
-    "LLA": "LLA",
-    "SER": "SER",
-    "LIG": "LIG"
-}
-
-DB_CODE_2_CFG = {v: k for k, v in CFG_2_DB_CODE.items()}
+# 数据库编码（表内实际存储）：E0 / D1 / SP1 / I1 / F1
+# ⚠️ 旧硬编码误把 西甲=LLA、意甲=SER、法甲=LIG（那是旧 match_result 的翻译码），
+#    与真实库码 SP1/I1/F1 冲突，曾导致联赛独热大面积失效、full_update_data 写错库码。
+from common_config import LEAGUE_REGISTRY
+CFG_2_DB_CODE = {k: v["db_code"] for k, v in LEAGUE_REGISTRY.items()}
+DB_CODE_2_CFG = {v["db_code"]: k for k, v in LEAGUE_REGISTRY.items()}
 
 
 def cfg_to_db_league(cfg_key):
@@ -707,28 +881,36 @@ def db_to_cfg_league(db_code):
 
 def get_standard_team(league_code, raw_name):
     """
-    统一标准化队名【2026-07-24 修正：仅当前联赛内匹配，关闭跨联赛兜底，防止队名错乱】
-    输入：联赛配置键 + 原始名称(支持中文/英文)
-    返回：(标准英文名, 中文队名)
-    无匹配自动兜底返回原名
-    2026-07-23 新增空值过滤
+    统一标准化队名【2026-07-30 生产级】
+    - 精确匹配（原逻辑保留）
+    - 归一化匹配（变音 / 前缀 / 全称 / 简写）
+    - 关闭跨联赛兜底（保持你 7-24 的设计）
     """
-    # 空值直接返回兜底
     if not league_code or not isinstance(raw_name, str) or raw_name.strip() == "":
         return (raw_name, raw_name)
+
     raw_name = raw_name.strip()
     league_dict = LEAGUE_TEAM_MAP.get(league_code, {})
+
+    # 1️⃣ 原样精确匹配（最快）
     if raw_name in league_dict:
         return league_dict[raw_name]
-    # 移除跨联赛遍历，只匹配当前联赛
+
+    # 2️⃣ 归一化匹配（解决变音、全称/简称问题）
+    norm_raw = _norm_team_name(raw_name)
+    for k, v in league_dict.items():
+        if _norm_team_name(k) == norm_raw:
+            return v
+
+    # 3️⃣ 兜底（保持你原设计）
     return (raw_name, raw_name)
 
 
 def get_team_cn_name_v2(league_raw, raw_team_name, print_miss: bool = True):
     """
     对外中文队名统一接口（适配数据库真实联赛编码）
-    数据库：D1/E0/LLA/SER/LIG
-    配置键：BUN/EPL/LLA/SER/LIG
+    数据库：E0/D1/SP1/I1/F1
+    配置键：EPL/BUN/LLA/SER/LIG
     先按联赛精准匹配，关闭跨联赛兜底
     2026-07-23 新增空值过滤、缺失映射日志打印
     2026-07-24 20:30 新增print_miss开关，批量转换时关闭打印，仅统计校验开启打印
@@ -737,14 +919,10 @@ def get_team_cn_name_v2(league_raw, raw_team_name, print_miss: bool = True):
     if league_raw is None or raw_team_name is None or str(raw_team_name).strip() == "":
         return str(raw_team_name) if raw_team_name is not None else ""
     
-    league_map = {
-        "D1": "BUN",
-        "E0": "EPL",
-        "EPL": "EPL",
-        "LLA": "LLA",
-        "SER": "SER",
-        "LIG": "LIG"
-    }
+    # 【2026-08-05 统一】同时兼容真实库码(SP1/I1/F1/E0/D1)与配置键(EPL/BUN/LLA/SER/LIG)
+    league_map = dict(DB_CODE_2_CFG)      # E0→EPL, D1→BUN, SP1→LLA, I1→SER, F1→LIG
+    for _k in LEAGUE_TEAM_MAP:
+        league_map.setdefault(_k, _k)     # 直接传配置键也能命中
     league_key = league_map.get(str(league_raw).strip(), str(league_raw).strip())
     std_name, cn_name = get_standard_team(league_key, raw_team_name.strip())
     

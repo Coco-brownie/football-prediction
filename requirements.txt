@@ -5,3 +5,4 @@ lightgbm>=4.0,<5.0
 scikit-learn>=1.3,<2.0
 joblib>=1.3,<2.0
 plotly>=5.0,<6.0
+tqdm>=4.66,<5.0  # walk_forward / recalculate / 特征构建均依赖

@@ -57,12 +57,17 @@ home_col = "home_team_std" if "home_team_std" in df_raw.columns else "home_team"
 away_col = "away_team_std" if "away_team_std" in df_raw.columns else "away_team"
 
 # 构建球队名映射（从映射字典 + 数据本身双重保障，100%覆盖）
+# 【2026-08-08 增强】match_feature_final 球队列存在中英混杂（部分存中文、部分存英文），
+#  故把 标准英文名/中文名/全称 三态都映射到中文名，避免“中文名显示成中文”仍被当作未映射。
 cn_2_std = {}
 std_2_cn = {}
 for cfg_code, team_map in LEAGUE_TEAM_MAP.items():
     for eng_std, (full_eng, cn_name) in team_map.items():
-        std_2_cn[eng_std] = cn_name
-        cn_2_std[cn_name] = eng_std
+        std_2_cn.setdefault(eng_std, cn_name)
+        std_2_cn.setdefault(cn_name, cn_name)
+        if full_eng:
+            std_2_cn.setdefault(full_eng, cn_name)
+        cn_2_std.setdefault(cn_name, eng_std)
 
 # 从数据本身补充 std -> 中文名 映射（兜底，确保无缺失）
 if "home_team_std" in df_raw.columns and "home_team" in df_raw.columns:
@@ -194,7 +199,7 @@ st.caption("基于联赛独立模型Walk Forward验证，准确率越高说明�
 
 try:
     import sqlite3
-    db_path = os.path.join(os.path.dirname(os.path.dirname(SCRIPT_PATH)), "football.db")
+    db_path = os.path.join(ROOT_DIR, "football.db")
     conn = sqlite3.connect(db_path)
     league_rank_df = pd.read_sql("SELECT * FROM league_independent_wf ORDER BY 整体准确率 DESC", conn)
     conn.close()
@@ -712,7 +717,7 @@ with st.expander("⚙️ 模型信息（高级）", expanded=False):
     st.caption("联赛独立模型Walk Forward验证准确率，越高说明规律越稳定、越好预测")
     try:
         import sqlite3
-        db_path = os.path.join(os.path.dirname(os.path.dirname(SCRIPT_PATH)), "football.db")
+        db_path = os.path.join(ROOT_DIR, "football.db")
         conn = sqlite3.connect(db_path)
         league_rank_df = pd.read_sql("SELECT * FROM league_independent_wf ORDER BY 整体准确率 DESC", conn)
         conn.close()
@@ -786,7 +791,7 @@ with st.expander("⚙️ 模型信息（高级）", expanded=False):
     st.caption("Walk Forward滚动验证，无未来函数，模型输出置信度与真实准确率的对应关系")
     try:
         import sqlite3
-        db_path = os.path.join(os.path.dirname(os.path.dirname(SCRIPT_PATH)), "football.db")
+        db_path = os.path.join(ROOT_DIR, "football.db")
         conn = sqlite3.connect(db_path)
         conf_acc_df = pd.read_sql("SELECT * FROM wf_confidence_accuracy", conn)
         conn.close()
