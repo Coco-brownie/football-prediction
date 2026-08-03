@@ -21,8 +21,11 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# ========== 数据库文件（太大，不上传） ==========
+# ========== 数据库文件 ==========
+# football.db 已瘦身到50MB+，随代码一起上传（Streamlit Cloud 需要）
+# 其他 db 文件（备份、临时等）仍忽略
 *.db
+!/football.db
 *.sqlite
 *.sqlite3
 
