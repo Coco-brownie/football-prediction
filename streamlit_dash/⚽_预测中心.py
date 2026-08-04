@@ -92,11 +92,11 @@ st.title("⚽ 足球赛事预测中心")
 
 if IS_CLOUD_DEMO:
     st.warning(
-        "**🌐 云端演示模式**：当前环境未包含历史比赛数据库（`football.db` 约 165MB，"
-        "超 GitHub 单文件 100MB 限制，未随仓库分发）。\n\n"
-        "赛事日历 / 单场预测 / 预测历史 依赖本地历史数据，云端暂无法提供；"
-        "本页面当前仅展示项目框架与模型验证结论。\n\n"
-        "**完整功能请在本地运行**：`streamlit run streamlit_dash/⚽_预测中心.py` "
+        "**🌐 云端演示模式**：当前环境未包含历史比赛数据库（`football.db` 已瘦身至约 64MB，"
+        "随仓库分发；正常部署会自动加载）。\n\n"
+        "赛事日历 / 单场预测 / 预测历史 依赖历史数据；若云端仍显示本提示，"
+        "说明 `football.db` 未随部署生效，请在本地运行完整功能。\n\n"
+        "**完整功能**：`streamlit run streamlit_dash/⚽_预测中心.py` "
         "（本地 `football.db` 含全部历史数据）。"
     )
 
@@ -116,9 +116,28 @@ with col_user1:
 
 current_user = st.session_state["current_user"]
 if not current_user:
-    st.error("⚠️ 请先在上方输入使用者昵称，才能使用预测功能")
+    st.caption("💡 输入昵称后，你的预测会自动保存到**专属预测历史**（含个人准确率、连胜、待开奖提醒）；不输入也能先浏览下方赛事日历。")
 else:
     st.success(f"✅ 当前使用者：{current_user}")
+
+st.divider()
+
+# ===== 下一步引导条（新老用户差异化 · 方向1：指引性） =====
+if current_user and ("user_name" in df_preds.columns) and not df_preds.empty:
+    _my_df = df_preds[df_preds["user_name"] == current_user]
+    _my_n = len(_my_df)
+    _pending_n = int((_my_df["is_verified"] == 0).sum()) if "is_verified" in _my_df.columns else 0
+    if _my_n > 0:
+        if _pending_n > 0:
+            st.info(f"👋 **{current_user}**，你已有 **{_my_n}** 条预测记录，其中 **{_pending_n}** 场待开奖 → 去 **📋 预测历史** 查看结果")
+        else:
+            st.info(f"👋 **{current_user}**，你已有 **{_my_n}** 条预测记录 → 去 **📋 预测历史** 回顾战绩")
+    else:
+        st.info("👋 新朋友？三步上手：**① 输入昵称 ✅ ② 下方赛事日历选一场比赛 ③ 点「🔮 预测」**，预测会自动保存到你的预测历史。")
+elif current_user:
+    st.info("👋 新朋友？三步上手：**① 输入昵称 ✅ ② 下方赛事日历选一场比赛 ③ 点「🔮 预测」**，预测会自动保存到你的预测历史。")
+else:
+    st.info("👋 你好！输入上方昵称即可开始预测；未输入昵称也能先浏览下方赛事日历。")
 
 st.divider()
 
@@ -159,6 +178,102 @@ with col3:
 
 st.divider()
 
+# ===== 📖 一句话看懂本系统策略（普通人版，折叠） =====
+with st.expander("📖 一句话看懂本系统策略（给普通人）", expanded=False):
+    st.markdown(
+        "> **用 AI 在五大联赛里挑「模型最有把握 + 赔率给得划算」的比赛，每次只下总资金很小的比例，"
+        "靠长期纪律累积优势——不赌单场，赌「做过验证、长期占优」的概率。**"
+    )
+    st.markdown(
+        "- 🦅 **猎鹰**（进取·主力）：高赔冷门 + 模型高把握，24 年 1759 次出手每 100 元拿回约 116 元（+15.8%）。\n"
+        "- 🪨 **磐石Pro**（稳健·极少出手）：只做高命中率场次，兜底降波动。\n"
+        "- ⚖️ **价值**（辅助·小仓）：专挑赔率给高的机会，细水长流，只给 ≤5% 仓位。\n\n"
+        "**安全底线**：小注（单注约1%）· 纪律（只下模型出手的场次）· 监控（每天盯战绩，下滑亮黄灯预警）。\n"
+        "**风险提示**：任何一场都可能输，这是「长期、小注、有验证的纪律」，不是稳赚神器。"
+    )
+
+# ===== 🎯 今日 AI 看点（方向1：首屏高价值内容，给你回来看的理由） =====
+def _compute_ai_focus(days, falcon_plus_version):
+    """计算未来days天五大联赛三AI参考（今日看点 / AI出手参考共用，带结果缓存）
+    修复：build_feature_by_teams 传【3个默认原始赔率】+ 开身价特征(57维)，
+    此前误传 0.28/0.33 两个概率且缺第3个赔率 → TypeError → 全部落"数据不足"。"""
+    from ai_intent_module import calc_ai_bet_intent
+    from match_predict import predict_match
+    from streamlit_dash.feature_auto_build import build_feature_by_teams
+
+    _t = pd.Timestamp.now().normalize()
+    _end = _t + pd.Timedelta(days=days)
+    df_up = df_schedule[
+        (df_schedule["match_date"].dt.normalize() >= _t) &
+        (df_schedule["match_date"].dt.normalize() <= _end)
+    ].copy().sort_values("match_date")
+    df_up = df_up[df_up["league_code"].isin(get_all_known_codes())]
+    _rows = []
+    for _, r in df_up.iterrows():
+        try:
+            feat = build_feature_by_teams(
+                df_all, r["home_team"], r["away_team"],
+                2.5, 3.3, 3.0, r["league_code"], use_value_features=True
+            )
+            pred = predict_match(feat, is_home_scene=True)
+            intent = calc_ai_bet_intent(
+                pred["confidence"], pred["predict_result"],
+                league_code=r["league_code"],
+                draw_prob=pred.get("prob_draw", 0), draw_odds=None,
+                advanced_mode=False,
+                falcon_plus_version=None if falcon_plus_version == "关闭" else falcon_plus_version
+            )
+            _rows.append({
+                "比赛日期": r["match_date"].strftime("%m-%d"),
+                "主队": std_2_cn.get(r["home_team"], r["home_team"]),
+                "客队": std_2_cn.get(r["away_team"], r["away_team"]),
+                "预测方向": pred["predict_result"],
+                "置信度": float(pred["confidence"]),
+                "共识等级": intent["consensus_label"],
+            })
+        except Exception:
+            pass
+    return pd.DataFrame(_rows)
+
+# 今日看点：默认未来2天；结果缓存到 session_state（交互不丢，跨天自动失效）
+_today_tag = pd.Timestamp.now().strftime("%Y%m%d")
+_focus_cache_key = f"ai_focus_cache_{_today_tag}"
+if _focus_cache_key not in st.session_state:
+    st.session_state[_focus_cache_key] = None
+
+with st.expander("🎯 **今日 AI 看点**（未来 2 天 · 三AI共识精选 · 每天自动更新）", expanded=True):
+    col_h1, col_h2 = st.columns([3, 1])
+    with col_h1:
+        st.caption("三个 AI（🦅猎鹰 / ⚖️天秤 / 🪨磐石）共同看好的赛事，一眼看到今天最值得关注的场次。基于默认赔率降级预测，仅供研究参考。"
+                   "（此三AI共识**不含价值策略**——价值是组合中 ≤5% 的独立小仓，见模型验证页「📌 决策参考」）")
+    with col_h2:
+        refresh_focus = st.button("🔄 刷新今日看点", key="btn_refresh_focus", use_container_width=True)
+
+    if refresh_focus:
+        with st.spinner("正在计算今日 AI 看点（约 10~30 秒）..."):
+            st.session_state[_focus_cache_key] = _compute_ai_focus(2, "关闭")
+
+    _focus_df = st.session_state.get(_focus_cache_key)
+    if _focus_df is not None and len(_focus_df) > 0:
+        _top = _focus_df[_focus_df["共识等级"].isin(["🤝 三AI共识", "👥 两AI看好"])].sort_values("置信度", ascending=False).head(5)
+        if len(_top) > 0:
+            for _, r in _top.iterrows():
+                _cons_color = "#67c23a" if r["共识等级"] == "🤝 三AI共识" else "#409eff"
+                st.markdown(
+                    f"<div style='padding:10px 12px;background:#f7fafd;border-left:4px solid {_cons_color};"
+                    f"border-radius:6px;margin-bottom:6px'>"
+                    f"<b>{r['比赛日期']} · {r['主队']} vs {r['客队']}</b>"
+                    f"<span style='float:right;font-size:12px;color:{_cons_color};font-weight:600'>{r['共识等级']}</span><br>"
+                    f"<span style='font-size:13px;color:#555'>预测 <b>{r['预测方向']}</b> · 置信度 {r['置信度']:.1%}</span>"
+                    f"</div>", unsafe_allow_html=True)
+            st.caption("💡 想要完整版？在下方 **📅 赛事日历** tab 的「AI 出手参考」可查看全部场次 + 三AI明细 + 猎鹰Plus。")
+        else:
+            st.caption("未来 2 天暂无三AI共识赛事（模型保守优先），可点击「刷新」或到 AI 出手参考查看完整列表。")
+    else:
+        st.caption("👆 点击右上「刷新今日看点」生成今日精选（首次约需 10~30 秒计算）。")
+
+st.divider()
+
 # 核心功能 Tabs
 tab_calendar, tab_predict, tab_track = st.tabs([
     "📅 赛事日历",
@@ -172,53 +287,74 @@ with tab_calendar:
 
     # ===== AI 观点区块（折叠式）=====
     st.divider()
-    st.info("✨ **AI 出手参考**：三AI共识推荐 + 置信度筛选，点击下方展开查看 ↓")
+    st.info("✨ **AI 出手参考（组合出手单）**：三AI共识 + 💎价值 + 👑磐石Pro，点击下方展开查看 ↓")
     with st.expander("🤖 展开 AI 出手参考", expanded=False):
-        st.caption("基于当前模型批量计算未来赛事的三AI出手建议，仅供决策参考")
+        st.caption("基于当前模型批量计算未来赛事的**组合出手单**（三AI + 价值 + 磐石Pro），仅供决策参考")
+        st.caption("🦅⚖️🪨 **三AI**（猎鹰/天秤/磐石）= 同一模型按风险偏好分三档（共识基础）；💎 **价值** = 独立小仓 EV≥10%（组合 ≤5%）；👑 **磐石Pro** = 保守AI高级模式（德甲/意甲精选，样本少作免费彩票）")
+        st.caption("⚠️ 仓位提示：实际单场仓位建议固定 **1%~2%**（凯利系数仅用于排序参考，长线有破产风险）；"
+                  "新口径三AI网格已验证成立：固定ROI +14.5%/+9.4%/+15.8%，盈利季 80%/62%/72%")
         
-        # 日期范围选择
-        col_d1, col_d2 = st.columns([1, 3])
-        with col_d1:
-            days_ahead = st.slider("未来天数", min_value=1, max_value=14, value=3, key="ai_view_days")
-        
-        today = pd.Timestamp.now().normalize()
-        end_date = today + pd.Timedelta(days=days_ahead)
-        
-        # 筛选赛程
+        # 日期范围选择（按周划分，贴合周/半月数据更新节奏；不再用抽象「未来N天」）
+        import datetime as _dt
+        _today_d = _dt.date.today()
+        _monday = _today_d - _dt.timedelta(days=_today_d.weekday())
+        _sunday = _monday + _dt.timedelta(days=6)
+        _next_monday = _sunday + _dt.timedelta(days=1)
+        _next_sunday = _next_monday + _dt.timedelta(days=6)
+        range_choice = st.radio(
+            "预测范围",
+            ["本周", "下周", "本周+下周"],
+            index=2,
+            horizontal=True,
+            key="ai_view_range"
+        )
+        if range_choice == "本周":
+            _start_d, _end_d = _today_d, _sunday
+            _range_label = f"本周（{_monday.month}/{_monday.day} ~ {_sunday.month}/{_sunday.day}）"
+        elif range_choice == "下周":
+            _start_d, _end_d = _next_monday, _next_sunday
+            _range_label = f"下周（{_next_monday.month}/{_next_monday.day} ~ {_next_sunday.month}/{_next_sunday.day}）"
+        else:
+            _start_d, _end_d = _today_d, _next_sunday
+            _range_label = f"本周+下周（{_today_d.month}/{_today_d.day} ~ {_next_sunday.month}/{_next_sunday.day}）"
+
+        # 筛选赛程（按日期范围；跨月/跨年用 date 比较天然支持）
         df_upcoming = df_schedule[
-            (df_schedule["match_date"].dt.normalize() >= today) & 
-            (df_schedule["match_date"].dt.normalize() <= end_date)
+            (df_schedule["match_date"].dt.date >= _start_d) &
+            (df_schedule["match_date"].dt.date <= _end_d)
         ].copy().sort_values("match_date")
-        
+
         # 过滤五大联赛（有模型的；兼容 B体系 db_code 与旧翻译码）
         valid_leagues = get_all_known_codes()
         df_upcoming = df_upcoming[df_upcoming["league_code"].isin(valid_leagues)]
-        
-        st.info(f"📅 未来 {days_ahead} 天共 {len(df_upcoming)} 场五大联赛赛事")
-        
-        # 猎鹰Plus版选择（冷门猎手专精）
-        col_f1, col_f2 = st.columns([1, 3])
-        with col_f1:
-            falcon_plus_options = ["关闭", "基础版", "德甲专精", "英超专精"]
-            falcon_plus_version = st.selectbox(
-                "🦅 猎鹰Plus版",
-                options=falcon_plus_options,
-                index=0,
-                help="冷门猎手专精：基础版全联赛固定ROI +15.79%（✅成立）；德甲/英超专精外样本⚠️存疑（+6.85% / +23.51%），详见统一验证报告"
-            )
-        with col_f2:
-            if falcon_plus_version != "关闭":
-                from ai_intent_module import FALCON_PLUS_CONFIG
-                desc = FALCON_PLUS_CONFIG.get(falcon_plus_version, {}).get("desc", "")
-                st.caption(f"✅ 已开启猎鹰·{falcon_plus_version}：{desc}")
-            else:
-                st.caption("💡 猎鹰Plus版：冷门猎手专精，高赔率+高置信度策略")
 
-        if st.button("🔍 批量计算三AI参考", type="primary", key="calc_ai_view"):
+        st.info(f"📅 {_range_label} · 共 {len(df_upcoming)} 场五大联赛赛事")
+        
+        # 猎鹰Plus（普通用户不关心「版本」，只关心是否启用已验证策略）
+        # 【2026-08-21 简化】改为单一 checkbox 默认启用「基础版」（已验证 +15.79% 可产品化）；
+        #  德甲/英超专精为实验性 Beta（外样本存疑、每季仅约3~5场），不作为产品化依据，已从界面移除，
+        #  避免用户面对「关闭/基础版/德甲/英超」四选一不知所措。
+        enable_falcon_plus = st.checkbox(
+            "🦅 启用猎鹰Plus基础版（已验证 +15.8%）",
+            value=True,
+            key="ai_view_falcon_plus",
+            help="猎鹰Plus基础版 = 猎鹰（激进档）加强：赔率≥2.5 + 置信≥55% 的冷门猎手精选，"
+                 "全联赛固定ROI +15.79%（✅已通过WF金标准验证、可产品化，MC固定1~2%安全）。"
+                 "德甲/英超专精为【实验性 Beta】，外样本存疑（每季仅约3~5场），不作为产品化依据，故不提供选择。"
+        )
+        falcon_plus_version = "基础版" if enable_falcon_plus else "关闭"
+        st.caption("💡 猎鹰Plus基础版 = 冷门猎手专精（高赔率+高置信），固定ROI +15.79% 已验证成立；"
+                   "关闭则退回基础猎鹰。批量场景无真实赔率，实际按置信度门槛（≥55%）生效。")
+
+        # 【方向6-流畅性】结果缓存到 session_state：切tab/滑滑块等交互后不丢，无需重算
+        ai_view_cache_key = "ai_view_result_cache"
+        _ai_view_sig = (range_choice, falcon_plus_version)
+
+        if st.button("🔍 批量计算组合出手单", type="primary", key="calc_ai_view"):
             if len(df_upcoming) == 0:
                 st.warning("暂无符合条件的赛事")
             else:
-                from ai_intent_module import calc_ai_bet_intent
+                from ai_intent_module import calc_ai_bet_intent, CONSENSUS_AI_KEYS, compute_value_signal, AI_CONFIGS
                 from match_predict import predict_match
                 from streamlit_dash.feature_auto_build import build_feature_by_teams
                 
@@ -231,11 +367,11 @@ with tab_calendar:
                     league = row["league_code"]
                     
                     try:
-                        # 构建特征（用默认赔率降级）
+                        # 【修复】build_feature_by_teams 传 3 个默认原始赔率 + 开身价特征(57维)；
+                        #  此前误传 0.28/0.33 两个概率且缺第3个赔率 → TypeError → 全部落"数据不足"
                         feat = build_feature_by_teams(
                             df_all, home_std, away_std,
-                            0.28, 0.33,
-                            league_code=league
+                            2.5, 3.3, 3.0, league, use_value_features=True
                         )
                         # 预测
                         pred = predict_match(feat, is_home_scene=True)
@@ -252,54 +388,104 @@ with tab_calendar:
                             falcon_plus_version=None if falcon_plus_version == "关闭" else falcon_plus_version
                         )
                         
-                        # 获取显示名称
-                        conservative_name = intent["intents"]["保守AI"].get("display_name", "保守AI")
-                        conservative_icon = intent["intents"]["保守AI"].get("icon", "🛡️")
-                        
-                        results.append({
+                        # 磐石Pro（保守AI + 高级模式：德甲/意甲精选，样本少作免费彩票）
+                        pro_intent = calc_ai_bet_intent(
+                            conf, result,
+                            league_code=league,
+                            draw_prob=pred.get("prob_draw", 0),
+                            draw_odds=None,
+                            advanced_mode=True,
+                            falcon_plus_version=None if falcon_plus_version == "关闭" else falcon_plus_version
+                        )
+                        pro_status = pro_intent["intents"]["保守AI"]["will_bet"]
+
+                        # 价值策略（独立小仓：EV≥10% 出手，组合权重 ≤5%）
+                        val_sig = compute_value_signal(pred.get("prob_home_win", 0), 2.5)
+
+                        # 三AI列名动态生成（注册表驱动；猎鹰Plus开启时激进列自动带版本名）
+                        ai_cols = {}
+                        for _k in CONSENSUS_AI_KEYS:
+                            _info = intent["intents"][_k]
+                            _nm = _info["display_name"] if _info.get("is_falcon_plus") else AI_CONFIGS[_k]["name"]
+                            ai_cols[_k] = f"{_info['icon']} {_nm}"
+
+                        _row = {
                             "比赛日期": row["match_date"].strftime("%m-%d"),
                             "主队": std_2_cn.get(home_std, home_std),
                             "客队": std_2_cn.get(away_std, away_std),
                             "预测方向": result,
-                            "置信度": f"{conf:.1%}",
+                            "置信度": float(conf),
                             "共识等级": intent["consensus_label"],
-                            "激进AI": "✅建议" if intent["intents"]["激进AI"]["will_bet"] else "❌观望",
-                            "中立AI": "✅建议" if intent["intents"]["中立AI"]["will_bet"] else "❌观望",
-                            f"{conservative_icon} {conservative_name}": "✅建议" if intent["intents"]["保守AI"]["will_bet"] else "❌观望",
-                        })
-                    except Exception as e:
-                        results.append({
+                        }
+                        for _k in CONSENSUS_AI_KEYS:
+                            _row[ai_cols[_k]] = "✅建议" if intent["intents"][_k]["will_bet"] else "❌观望"
+                        _row["💎 价值"] = f"✅ EV{val_sig['ev']:+.0%}" if val_sig["will_bet"] else f"— EV{val_sig['ev']:+.0%}"
+                        _row["👑 磐石Pro"] = "✅建议" if pro_status else "❌观望"
+                        results.append(_row)
+                    except Exception:
+                        # 与成功分支同构的列（注册表驱动），避免 pd.DataFrame 列错位/NaN 混乱
+                        _er_cols = {_k: f"{AI_CONFIGS[_k]['icon']} {AI_CONFIGS[_k]['name']}" for _k in CONSENSUS_AI_KEYS}
+                        _er = {
                             "比赛日期": row["match_date"].strftime("%m-%d"),
                             "主队": std_2_cn.get(home_std, home_std),
                             "客队": std_2_cn.get(away_std, away_std),
                             "预测方向": "—",
-                            "置信度": "—",
+                            "置信度": None,
                             "共识等级": "数据不足",
-                            "激进AI": "—",
-                            "中立AI": "—",
-                            "保守AI": "—",
-                        })
+                        }
+                        for _k in CONSENSUS_AI_KEYS:
+                            _er[_er_cols[_k]] = "—"
+                        _er["💎 价值"] = "—"
+                        _er["👑 磐石Pro"] = "—"
+                        results.append(_er)
                     
                     progress_bar.progress((idx + 1) / len(df_upcoming))
                 
                 progress_bar.empty()
                 df_ai_view = pd.DataFrame(results)
+                st.session_state[ai_view_cache_key] = {"sig": _ai_view_sig, "df": df_ai_view}
+
                 
-                # 共识等级排序映射
+        # 【方向6-流畅性】结果从 session_state 读取（交互不丢）；参数变化提示重算
+        if ai_view_cache_key in st.session_state and st.session_state[ai_view_cache_key] is not None:
+            _cached = st.session_state[ai_view_cache_key]
+            if _cached["sig"] != _ai_view_sig:
+                st.caption("⚠️ 已调整「预测范围 / 猎鹰Plus版」参数，点击上方按钮重新计算。")
+            else:
+                df_ai_view = _cached["df"].copy()
+                # 共识等级排序映射（对齐 ai_intent_module 实际输出标签）
                 consensus_order = {
-                    "🛡️ 三AI共识": 0,
-                    "⚖️ 两AI共识": 1,
+                    "🤝 三AI共识": 0,
+                    "👥 两AI看好": 1,
                     "🔥 仅激进关注": 2,
-                    "无AI出手": 3,
-                    "数据不足": 4
+                    "👑 仅Pro关注": 2,
+                    "❌ 无AI出手": 3,
+                    "数据不足": 4,
                 }
                 df_ai_view["共识排序"] = df_ai_view["共识等级"].map(consensus_order)
                 df_ai_view = df_ai_view.sort_values(["共识排序", "置信度"], ascending=[True, False])
                 df_ai_view = df_ai_view.drop(columns=["共识排序"])
-                
+
+                # ===== 出手统计汇总：让用户一眼知道「AI 评估了全部、只有这些推荐」，避免空表误判 =====
+                _n_total = len(df_ai_view)
+                _n_cons = int((df_ai_view["共识等级"] == "🤝 三AI共识").sum())
+                _n_val = int(df_ai_view["💎 价值"].astype(str).str.startswith("✅").sum())
+                _n_pro = int((df_ai_view["👑 磐石Pro"] == "✅建议").sum())
+                _n_none = int((df_ai_view["共识等级"] == "❌ 无AI出手").sum())
+                _n_skip = int((df_ai_view["共识等级"] == "数据不足").sum())
+                sc1, sc2, sc3, sc4, sc5 = st.columns(5)
+                sc1.metric("📅 已评估场次", _n_total)
+                sc2.metric("🤝 三AI共识", f"{_n_cons} 场")
+                sc3.metric("💎 价值出手", f"{_n_val} 场")
+                sc4.metric("👑 磐石Pro", f"{_n_pro} 场")
+                sc5.metric("❌ 无AI出手", f"{_n_none} 场")
+                if _n_skip > 0:
+                    st.caption(f"⚠️ 其中 {_n_skip} 场因历史数据不足未能评估（非模型不推荐）；"
+                               f"{_n_val} 场触发 💎价值、{_n_pro} 场触发 👑磐石Pro（独立小仓，勿据此下重注）")
+
                 # 精选：三AI全票通过
-                df_top = df_ai_view[df_ai_view["共识等级"] == "🛡️ 三AI共识"]
-                
+                df_top = df_ai_view[df_ai_view["共识等级"] == "🤝 三AI共识"]
+
                 if len(df_top) > 0:
                     st.markdown("### 🏆 精选推荐（三AI共识）")
                     st.caption("三个AI同时建议关注，可靠性最高")
@@ -312,24 +498,32 @@ with tab_calendar:
                         </div>
                         """, unsafe_allow_html=True)
                     st.divider()
-                
-                # 完整表格 + 筛选
+                else:
+                    # 【2026-08-21 空态明确化：不是程序出错，而是模型保守没出手】
+                    st.info("📭 本批**没有「三AI共识」场次**——AI 已评估全部赛事，但三档未同时出手（模型保守优先、宁缺毋滥）。"
+                            "各 AI 的出手/观望状态见下方完整表格。")
+
+                # 完整表格 + 筛选（默认全选，杜绝空表让用户误以为程序出错）
                 st.markdown("### 📋 全部赛事参考")
                 col_f1, col_f2 = st.columns(2)
                 with col_f1:
+                    _all_cons = ["🤝 三AI共识", "👥 两AI看好", "🔥 仅激进关注", "👑 仅Pro关注", "❌ 无AI出手", "数据不足"]
                     filter_consensus = st.multiselect(
-                        "按共识等级筛选",
-                        ["🛡️ 三AI共识", "⚖️ 两AI共识", "🔥 仅激进关注", "无AI出手"],
-                        default=["🛡️ 三AI共识", "⚖️ 两AI共识"],
+                        "按共识等级筛选（默认全选）",
+                        _all_cons,
+                        default=_all_cons,
                         key="ai_view_filter"
                     )
                 
                 df_show = df_ai_view.copy()
                 if filter_consensus:
                     df_show = df_show[df_show["共识等级"].isin(filter_consensus)]
+                if "置信度" in df_show.columns:
+                    df_show["置信度"] = df_show["置信度"].apply(
+                        lambda x: f"{x:.1%}" if isinstance(x, (int, float)) and not pd.isna(x) else "—")
                 
                 st.dataframe(df_show, use_container_width=True, hide_index=True)
-                st.caption("💡 市场概率使用默认估算值，实际置信度以真实数据为准；共识度越高参考价值越强")
+                st.caption("💡 市场概率使用默认估算值（主胜2.5/平3.3/客3.0），实际以真实赔率为准；💎价值列 EV 基于模型概率×默认赔率，仅供小仓参考（≤5%），勿据此下重注；共识度越高参考价值越强")
 
 with tab_predict:
     if not current_user:
@@ -348,9 +542,12 @@ with tab_track:
         if has_user:
             col_scope1, col_scope2 = st.columns([1, 1])
             with col_scope1:
+                # 【方向2-与我有关】有昵称时默认只看"我"的预测，而不是所有人的
+                _scope_default = 1 if current_user else 0
                 stat_scope = st.radio(
                     "统计范围",
                     ["全部人员", "仅当前用户"],
+                    index=_scope_default,
                     horizontal=True,
                     key="stat_scope",
                     label_visibility="collapsed"
@@ -388,6 +585,54 @@ with tab_track:
         c2.metric("已完赛校验", total_v)
         c3.metric("预测正确", int(correct_v))
         c4.metric("整体准确率", f"{acc_v:.2%}" if total_v > 0 else "--")
+
+        # ===== 方向3：待开奖 + 最近开奖（给你回来看的理由） =====
+        if stat_scope == "仅当前用户" and current_user and "is_verified" in df_filtered.columns:
+            _pending = df_filtered[df_filtered["is_verified"] != 1]
+            _verified_user = df_filtered[df_filtered["is_verified"] == 1]
+            _recent7 = _verified_user[
+                pd.to_datetime(_verified_user["match_date"], errors="coerce").fillna(pd.Timestamp.min)
+                >= (pd.Timestamp.now().normalize() - pd.Timedelta(days=7))
+            ]
+            col_p1, col_p2 = st.columns(2)
+            with col_p1:
+                if len(_pending) > 0:
+                    st.warning(f"🔔 **{len(_pending)} 场待开奖**：开赛后回来刷新即可看到结果")
+                    for _, r in _pending.head(3).iterrows():
+                        st.caption(f"· {str(r['match_date'])[:10]} {std_2_cn.get(r['home_team'], r['home_team'])} vs {std_2_cn.get(r['away_team'], r['away_team'])} → 预测 **{r['predict_result']}**")
+                else:
+                    st.success("✅ 当前无待开奖预测")
+            with col_p2:
+                if len(_recent7) > 0:
+                    _rc = int(_recent7["is_correct"].sum())
+                    st.success(f"🎉 **近 7 天开奖 {len(_recent7)} 场**：预测正确 **{_rc}** 场")
+                else:
+                    st.caption("近 7 天暂无开奖记录")
+
+        # ===== 方向2：我的战绩卡片（与我有关） =====
+        if stat_scope == "仅当前用户" and current_user and len(df_filtered) >= 1:
+            _uv_verified = df_filtered[df_filtered["is_verified"] == 1]
+            _uv_recent10 = _uv_verified.sort_values("match_date", ascending=False).head(10) if len(_uv_verified) > 0 else _uv_verified
+            _recent_acc = _uv_recent10["is_correct"].mean() if len(_uv_recent10) > 0 else None
+            _streak = 0
+            for _, r in _uv_verified.sort_values("match_date", ascending=False).iterrows():
+                if r["is_correct"] == 1:
+                    _streak += 1
+                else:
+                    break
+            _best_league = "—"
+            if len(_uv_verified) >= 3 and "league_code" in _uv_verified.columns:
+                _lg_acc = _uv_verified.groupby("league_code")["is_correct"].agg(["mean", "count"])
+                _lg_acc = _lg_acc[_lg_acc["count"] >= 3]
+                if len(_lg_acc) > 0:
+                    _best_lg = _lg_acc["mean"].idxmax()
+                    _best_league = f"{league_name_by_code(_best_lg)}（{_lg_acc.loc[_best_lg, 'mean']:.0%}）"
+            st.markdown("##### 👤 我的战绩")
+            gc1, gc2, gc3, gc4 = st.columns(4)
+            gc1.metric("📈 近10场准确率", f"{_recent_acc:.0%}" if _recent_acc is not None else "—")
+            gc2.metric("🔥 当前连胜", f"{_streak} 连胜" if _streak > 0 else "0")
+            gc3.metric("🏆 最准联赛", _best_league)
+            gc4.metric("🧮 已完赛校验", len(_uv_verified))
 
         # 各赛果准确率
         if total_v > 0:
@@ -541,7 +786,7 @@ with tab_track:
             st.dataframe(df_show, use_container_width=True, hide_index=True)
 
 # 底部更新日志（默认折叠，不占空间）
-APP_VERSION = "v1.3.0"
+APP_VERSION = "v1.3.1"
 st.divider()
 
 # 免责声明
@@ -552,6 +797,25 @@ st.warning("""
 
 with st.expander(f"📝 更新日志 · {APP_VERSION} 🆕", expanded=False):
     st.markdown("""
+**v1.3.3 — 2026-08-21（单场/出手参考体验修正）**
+- 🎯 单场预测卡片：模型概率上位为主角（预测方向 + 主胜39%·平28%·客胜33%），「历史命中率」降级为「该档位」小字校准说明——修复旧版用户误读「主胜置信度41.4%」与模型概率对不上的困惑
+- 🦅 猎鹰Plus 简化为「启用基础版」单选框（默认开启，已验证+15.8%）：移除「关闭/德甲/英超」四选一，德甲/英超专精（实验性Beta存疑）不再作为选择项
+- 📊 出手参考空态根治：批量计算后默认显示全部赛事 + 顶部出手统计汇总（已评估/三AI共识/价值/磐石Pro/无AI出手）；无共识场次明确提示「模型保守没出手」而非空表；数据不足行列名与成功行统一
+- 📅 未来天数 → 按周划分：本周 / 下周 / 本周+下周，贴合周/半月数据更新节奏
+
+**v1.3.2 — 2026-08-21（组合出手单 · AI注册表驱动）**
+- 🔧 **出手参考升级为「组合出手单」**：不再只是三AI，新增 💎价值（EV≥10% 独立小仓 ≤5%）与 👑磐石Pro（德甲/意甲精选）两条腿，与决策参考的组合规则闭环
+- 🧱 **AI 注册表驱动架构**：新增 `CONSENSUS_AI_KEYS` + `compute_value_signal`，共识标签/出手参考列/角色卡全部由注册表自动生成，未来加第四AI/第五AI只需登记一行配置，渲染代码零改动
+- 🔄 共识逻辑动态化：三档仍显示「三AI共识/两AI看好」，扩展到 4AI/5AI 时自动变「4AI共识」等
+
+**v1.3.1 — 2026-08-20（看板指引性·流畅性·用户粘性优化）**
+- 🎯 新增「今日 AI 看点」：首屏直达未来2天三AI共识精选，每天自动更新，给你回来看的理由
+- 👋 新老用户差异化引导条：老用户显示「待开奖 X 场」钩子，新用户三步上手引导
+- 🔧 修复 AI 出手参考失效 Bug：特征调用缺第3赔率 → 全部"数据不足"，现已修复；结果持久化，切 tab 不丢
+- 👤 预测历史默认切到「仅当前用户」+「我的战绩」卡片（近10场准确率/当前连胜/最准联赛）
+- 🔔 预测历史新增「待开奖 + 最近7天开奖」提醒，开赛后来刷新看结果
+- 💾 预测保存成功/失败明确反馈 + 批量预测成功/跳过统计
+
 **v1.3.0 — 2026-08-08（看板全面修复 · 方案A：置信度改历史命中率）**
 - 🔥 **方案A：置信度 ≠ 主胜概率**——置信度改为查「WF 分桶历史真实命中率」（根库 wf_confidence_accuracy）：拜仁主胜 52.3% → 置信度 55.2%；巴萨主胜 48.6% → 置信度 41.4%。语义＝「这个档位历史上命中了多少」，更保守真实
 - 🤖 **AI 出手参考保守化**：三 AI 阈值梯度（激进50% / 中立55% / 保守60%，历史命中率口径）+ 平局整体压一档；纯参考、绝不替您决定出手（UI 明确标注「是否出手由您独立判断」）

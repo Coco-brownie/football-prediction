@@ -704,12 +704,12 @@ with st.expander("⚙️ 模型信息（高级）", expanded=False):
     st.markdown("##### 模型概览")
     col_m1, col_m2, col_m3 = st.columns(3)
     col_m1.metric("模型架构", "LGB + 泊松 + 平局专项")
-    col_m2.metric("特征维度", "52维（含ELO扩展+时间衰减）")
-    col_m3.metric("融合权重", "55% / 30% / 5%")
+    col_m2.metric("特征维度", "57维（含ELO扩展+时间衰减+身价）")
+    col_m3.metric("融合权重", "主模型85% + 平局15%")
     
     col_m4, col_m5 = st.columns(2)
-    col_m4.metric("WF真实准确率", "53.6%", help="Walk Forward赛季重置版验证，无未来函数")
-    col_m5.metric("模型真实alpha", "约1-2%", help="扣除庄家抽水后，勉强打平")
+    col_m4.metric("WF真实准确率", "51.4%", help="54,728场外样本，无未来函数，argmax口径")
+    col_m5.metric("主胜基准率", "45.8%", help="无脑买主胜的准确率，模型alpha约+5.6pt")
     st.info("💡 三模型融合：LightGBM三分类 + 泊松进球回归 + 平局二分类专项，三种不同原理互补")
     
     st.divider()
@@ -815,11 +815,11 @@ with st.expander("⚙️ 模型信息（高级）", expanded=False):
             st.caption(f"图表渲染失败：{str(e)}")
 
         st.info("""
-        📌 **关键结论**：
-        1. 置信度与准确率正相关，趋势完全正确
-        2. 85%以上高置信度 → 真实准确率约82%
-        3. 模型整体略微高估置信度（平均高4-6个百分点）
-        4. 高置信度区间高估更明显（约8个百分点）
+        📌 **关键结论**（新口径：WF分桶历史命中率，具体数字以上表为准）：
+        1. 置信度与实际命中率正相关，趋势正确
+        2. ≥90%档为小样本（命中率高但置信区间宽），勿过度依赖
+        3. 高置信（≥60%）命中率高，但固定ROI趋近于零——置信高≠有正收益
+        4. 新口径用历史分桶命中率替代模型原始概率，更保守真实
         """)
     except Exception as e:
         st.caption(f"置信度数据加载失败：{str(e)}")

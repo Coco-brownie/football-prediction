@@ -302,6 +302,8 @@ def render_schedule_calendar(user_name=None):
     if stat_col4.button("🔮 批量预测", type="primary", use_container_width=True):
         with st.spinner("🔮 正在预测中，请稍等..."):
             batch_results = []
+            _pred_count = 0
+            _skip_count = 0
             track('predict_batch',
                   action_detail=f'{len(df_filter)}场赛程',
                   page_name='预测中心')
@@ -310,7 +312,9 @@ def render_schedule_calendar(user_name=None):
                     continue
                 can_pred, reason = can_predict_match(row, df_hist)
                 if not can_pred:
+                    _skip_count += 1
                     continue
+                _pred_count += 1
 
                 home_name = row["home_team_cn"] if pd.notna(row["home_team_cn"]) else row["home_team"]
                 away_name = row["away_team_cn"] if pd.notna(row["away_team_cn"]) else row["away_team"]
@@ -364,6 +368,11 @@ def render_schedule_calendar(user_name=None):
                     unique_results.append(r)
 
             st.session_state[batch_pred_key] = unique_results
+            # 方向6：批量预测统计反馈（成功/跳过）
+            if _pred_count > 0:
+                st.success(f"✅ 批量预测完成：成功 **{_pred_count}** 场，跳过 **{_skip_count}** 场（已完赛/无历史数据）")
+            else:
+                st.warning(f"⚠️ 本批 {len(df_filter)} 场赛事均无法预测（已完赛或历史数据不足）")
 
     # 批量预测结果展示
     if batch_pred_key in st.session_state and len(st.session_state[batch_pred_key]) > 0:
@@ -621,10 +630,11 @@ def render_match_card(row, df_hist, user_name=None):
                 result = predict_match(feature)
                 st.session_state[pred_key] = result
 
-                # 保存到数据库（有昵称才保存）
+                # 方向3：保存反馈（None=未保存(无昵称) True=成功 False=失败）
+                _saved_flag = None
                 if user_name:
                     try:
-                        save_prediction_to_db(
+                        _saved_flag = bool(save_prediction_to_db(
                             match_date=str(row["match_date"])[:10],
                             home_team=home_name,
                             away_team=away_name,
@@ -636,26 +646,42 @@ def render_match_card(row, df_hist, user_name=None):
                             confidence=result["confidence"],
                             predict_source="schedule",
                             user_name=user_name
-                        )
+                        ))
                     except:
-                        pass
+                        _saved_flag = False
+                st.session_state[f"card_saved_{match_id}"] = _saved_flag
 
             # 展示预测结果
             if pred_key in st.session_state:
                 pred_result = st.session_state[pred_key]
                 result_color = {"主胜": "#2ecc71", "平局": "#f39c12", "客胜": "#e74c3c"}.get(pred_result["predict_result"], "#666")
+                # 【2026-08-21 展示口径：模型概率为主角，历史命中率降级为校准辅助】
+                #  旧版把「置信度 xx%（历史命中）」高亮在预测方向后，用户会误读成
+                #  「主胜本次命中率=xx%」，与模型概率（如 39%）对不上而困惑。
+                #  现改为：高亮只显示预测方向 → 模型概率分布独立一行（主角）→
+                #  历史命中率明确标注「该档位」小字校准说明（保留但不再喧宾夺主）。
+                _ph = pred_result['prob_home_win']
+                _pd_ = pred_result['prob_draw']
+                _pa = pred_result['prob_away_win']
                 st.markdown(
                     f"<div style='margin-top:8px;padding:8px 10px;background:#f8f9fa;border-radius:6px;'>"
                     f"<div style='font-size:14px;font-weight:600;color:{result_color}'>"
-                    f"→ {pred_result['predict_result']}"
-                    f"<span style='color:#666;font-weight:400;font-size:12px;margin-left:6px'>"
-                    f"置信度 {pred_result['confidence']:.1%}（历史命中）"
-                    f"</span></div>"
-                    f"<div style='font-size:11px;color:#999;margin-top:3px'>"
-                    f"主胜 {pred_result['prob_home_win']:.0%} · 平 {pred_result['prob_draw']:.0%} · 客胜 {pred_result['prob_away_win']:.0%}"
+                    f"→ 预测 {pred_result['predict_result']}"
+                    f"</div>"
+                    f"<div style='font-size:12px;color:#444;margin-top:2px'>"
+                    f"模型概率：主胜 {_ph:.0%} · 平 {_pd_:.0%} · 客胜 {_pa:.0%}"
+                    f"</div>"
+                    f"<div style='font-size:11px;color:#999;margin-top:2px'>"
+                    f"该档位历史命中率 {pred_result['confidence']:.1%} · 缺赔率降级预测，仅供参考"
                     f"</div></div>",
                     unsafe_allow_html=True
                 )
+                # 方向3：保存反馈
+                _saved_flag = st.session_state.get(f"card_saved_{match_id}")
+                if _saved_flag is True:
+                    st.caption("✅ 已保存到预测历史")
+                elif _saved_flag is False:
+                    st.caption("⚠️ 预测已展示，但保存失败")
 
                 # 详情展开：AI出手建议
                 show_detail = st.checkbox("📋 查看详情", key=f"detail_{match_id}")

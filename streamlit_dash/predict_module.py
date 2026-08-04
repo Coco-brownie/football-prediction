@@ -15,6 +15,14 @@ from common.style import style_match_result_df
 from team_mapping_v2 import LEAGUE_CFG, cfg_to_db_league
 from common.usage_tracker import track
 
+# 赔率自动获取
+sys.path.insert(0, os.path.join(ROOT_DIR, "data"))
+try:
+    from odds_fetcher import find_match_odds, fetch_league_odds, save_matches_to_cache, LEAGUE_KEY_MAP
+    ODDS_FETCHER_AVAILABLE = True
+except ImportError:
+    ODDS_FETCHER_AVAILABLE = False
+
 # ==================== SHAP 特征贡献解释 ====================
 # 特征名中文映射
 FEATURE_CN_MAP = {
@@ -323,12 +331,51 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
         st.warning("⚠️ 主队和客队不能选择同一支球队，请重新挑选")
         return
 
-    st.subheader("📊 输入市场概率（可选）")
+    st.subheader("📊 输入市场赔率")
+
+    # 自动获取赔率按钮
+    auto_col1, auto_col2 = st.columns([1, 3])
+    with auto_col1:
+        auto_odds_btn = st.button("🔄 自动获取赔率", use_container_width=True, key="btn_auto_odds")
+    with auto_col2:
+        if ODDS_FETCHER_AVAILABLE and auto_odds_btn:
+            with st.spinner("正在查找赔率..."):
+                # 先尝试从缓存找
+                result = find_match_odds(pred_home, pred_away, league_code=curr_league_db)
+                if result:
+                    st.session_state["input_home_odds"] = result["odds_h"]
+                    st.session_state["input_draw_odds"] = result["odds_d"]
+                    st.session_state["input_away_odds"] = result["odds_a"]
+                    st.success(f"已自动填充（{result['bookmaker']}，{result['home_team']} vs {result['away_team']}，匹配度{result['confidence']:.0%}）")
+                else:
+                    # 缓存没有，尝试实时拉取该联赛
+                    api_key = os.environ.get("THE_ODDS_API_KEY", "")
+                    if api_key:
+                        api_league = LEAGUE_KEY_MAP.get(curr_league_db)
+                        if api_league:
+                            data = fetch_league_odds(api_league, api_key)
+                            if isinstance(data, list) and data:
+                                saved = save_matches_to_cache(data, curr_league_db)
+                                result = find_match_odds(pred_home, pred_away, league_code=curr_league_db)
+                                if result:
+                                    st.session_state["input_home_odds"] = result["odds_h"]
+                                    st.session_state["input_draw_odds"] = result["odds_d"]
+                                    st.session_state["input_away_odds"] = result["odds_a"]
+                                    st.success(f"实时拉取成功（{result['bookmaker']}），已保存{saved}场到缓存")
+                                else:
+                                    st.warning(f"已拉取{saved}场赔率，但未找到{pred_home} vs {pred_away}的比赛")
+                            else:
+                                st.warning("该联赛当前无即将进行的比赛，请手动输入")
+                    else:
+                        st.info("未配置API key，请手动输入赔率。配置方法：设置环境变量THE_ODDS_API_KEY（免费注册 the-odds-api.com）")
+        elif not ODDS_FETCHER_AVAILABLE:
+            st.caption("（赔率自动获取模块不可用）")
+
     col1, col2, col3 = st.columns(3)
     with col1:
         home_odds_input = st.number_input(
             "主胜赔率",
-            value=2.50,
+            value=st.session_state.get("input_home_odds", 2.50),
             step=0.01,
             min_value=1.01,
             key="input_home_odds"
@@ -336,7 +383,7 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
     with col2:
         draw_odds_input = st.number_input(
             "平局赔率",
-            value=3.30,
+            value=st.session_state.get("input_draw_odds", 3.30),
             step=0.01,
             min_value=1.01,
             key="input_draw_odds"
@@ -344,7 +391,7 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
     with col3:
         away_odds_input = st.number_input(
             "客胜赔率",
-            value=3.00,
+            value=st.session_state.get("input_away_odds", 3.00),
             step=0.01,
             min_value=1.01,
             key="input_away_odds"
@@ -388,10 +435,10 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
                       action_detail=f'{pred_home} vs {pred_away}',
                       page_name='预测中心')
 
-                # 保存预测结果到数据库
+                # 保存预测结果到数据库（方向3：明确保存反馈）
                 from datetime import datetime
                 today_str = datetime.now().strftime("%Y-%m-%d")
-                save_prediction_to_db(
+                _save_ok = save_prediction_to_db(
                     match_date=today_str,
                     home_team=pred_home,
                     away_team=pred_away,
@@ -404,6 +451,7 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
                     predict_source="manual",
                     user_name=user_name
                 )
+                st.session_state["manual_saved"] = _save_ok
             except Exception as e:
                 import traceback
                 err_detail = traceback.format_exc()
@@ -412,6 +460,14 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
                 return
 
         st.success("✅ 预测计算完成")
+        # 方向3/6：保存反馈 + 下一步引导（一次性提示，仅本次点击展示）
+        _manual_saved = st.session_state.pop("manual_saved", None)
+        if _manual_saved is True:
+            st.success(f"💾 预测已保存到 **{user_name}** 的预测历史 → 去 **📋 预测历史** 回顾战绩")
+        elif _manual_saved is False:
+            st.warning("⚠️ 预测已展示，但保存失败（请检查数据库写入权限）")
+        elif not user_name:
+            st.info("💡 预测未保存（未输入昵称）。输入昵称后预测会自动存入你的预测历史。")
 
         # 预测结果色块
         result_color = {

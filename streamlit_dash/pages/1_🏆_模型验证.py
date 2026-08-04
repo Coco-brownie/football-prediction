@@ -15,6 +15,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import numpy as np
+import json
 
 # 页面配置
 st.set_page_config(page_title="AI策略验证面板", page_icon="🏆", layout="wide")
@@ -41,9 +42,9 @@ AI_PROFILES = {
         "style_tag": "防守型",
         "style_desc": "不急，等机会",
         "skill_name": "【稳如泰山】",
-        "skill_desc": "只做有价值的比赛，仓位最轻，抗波动能力最强",
+        "skill_desc": "只做高命中率比赛，固定小仓位，抗波动能力最强",
         "personality": "佛系老大哥 · 稳如泰山 · 抗抽水最强",
-        "params": "置信度≥55% · 凯利0.20 · 20%安全边际",
+        "params": "命中率≥70% · 固定1%~2% · 20%安全边际",
         "suitable": "求稳为主、优先控制风险的场景",
     },
     "中立AI": {
@@ -53,9 +54,9 @@ AI_PROFILES = {
         "style_tag": "均衡型",
         "style_desc": "两边都要，但要算清楚",
         "skill_name": "【均衡之道】",
-        "skill_desc": "在收益和风险之间找最优平衡点，不冒进也不保守",
-        "personality": "均衡大师 · 选择困难症救星 · 综合最优",
-        "params": "置信度≥55% · 凯利0.60 · 10%安全边际",
+        "skill_desc": "在收益和风险之间找平衡点，覆盖适中",
+        "personality": "均衡大师 · 选择困难症救星 · 攻守兼备",
+        "params": "命中率≥60% · 固定1%~2% · 10%安全边际",
         "suitable": "大多数场景的默认选择，攻守兼备",
     },
     "激进AI": {
@@ -63,24 +64,24 @@ AI_PROFILES = {
         "icon": "🦅",
         "color": "#e74c3c",
         "style_tag": "攻击型",
-        "style_desc": "梭哈，赢了会所嫩模",
+        "style_desc": "高赔冷门，精准打击",
         "skill_name": "【疾风突袭】",
-        "skill_desc": "有价值就敢上，仓位最重，波动最大",
-        "personality": "激进派猎手 · 收益天花板 · 波动大",
-        "params": "置信度≥55% · 凯利0.90 · 0%安全边际",
-        "suitable": "追求高覆盖、能承受较大波动的场景",
+        "skill_desc": "冷门猎手，高赔率+高置信度；金标准（去重后 50752 场）2.2/0.55 = 357场 +15.51%（✅ 成立），组合底盘主力",
+        "personality": "激进派猎手 · 主力打手 · 波动较大",
+        "params": "赔率≥2.2 置信≥55% · 固定小注1% · 每季约14场",
+        "suitable": "追求高收益、能承受波动的场景",
     },
     "串关AI": {
-        "display_name": "八卦#C01",
+        "display_name": "串关参考",
         "icon": "☯️",
         "color": "#9b59b6",
-        "style_tag": "策略型",
-        "style_desc": "分散风险，稳中求胜",
-        "skill_name": "【八卦阵】",
-        "skill_desc": "2串1保守型，用串关分散风险，以柔克刚",
-        "personality": "防守大师 · 串关狂魔 · 以柔克刚",
-        "params": "2串1 · 置信度≥70% · 凯利0.20",
-        "suitable": "喜欢串关、追求高赔率的场景",
+        "style_tag": "风险参考",
+        "style_desc": "串关稀释命中率，仅娱乐参考",
+        "skill_name": "【串关风险提示】",
+        "skill_desc": "2串1命中率≈单场命中率²（单场50%→2串1仅25%），每加一场再砍一半；本系统不将串关作为推荐策略（C-012 存疑）",
+        "personality": "参考说明 · 非推荐策略 · 娱乐可用",
+        "params": "最多2串1 · 极小注 · 娱乐性质",
+        "suitable": "仅娱乐参考，不建议作为主策略",
         "placeholder": True,
     },
 }
@@ -227,6 +228,22 @@ def get_consensus_analysis(season_year):
 st.markdown("# 🏆 模型验证")
 st.markdown("Walk Forward 金标准验证 · 无未来函数 · 真实预测能力评估")
 
+# ===== 📖 一句话看懂本系统策略（普通人版，折叠） =====
+with st.expander("📖 一句话看懂本系统策略（给普通人）", expanded=False):
+    st.markdown(
+        "> **用 AI 在五大联赛里挑「模型最有把握 + 赔率给得划算」的比赛，每次只下总资金很小的比例，"
+        "靠长期纪律累积优势——不赌单场，赌「做过验证、长期占优」的概率。**"
+    )
+    col_s1, col_s2, col_s3 = st.columns(3)
+    with col_s1:
+        st.success("**🦅 猎鹰（进取·主力）**\n\n专挑高赔冷门里模型最有把握的场次；过去 24 年 1759 次出手，每下 100 元平均拿回约 116 元（+15.8%），团队主力。")
+    with col_s2:
+        st.info("**🪨 磐石Pro（稳健·极少出手）**\n\n只做高命中率、几乎不会看错的比赛，出手很少，兜底降波动。")
+    with col_s3:
+        st.warning("**⚖️ 价值（辅助·小仓）**\n\n专挑「赔率比真实概率给得高」的机会，细水长流；只给 ≤5% 仓位（对抽水敏感）。")
+    st.caption("**三条安全底线**：① 小注——单注只动总资金约 1%；② 纪律——只下模型出手的场次，不追热点不翻倍；③ 监控——每天健康监控盯战绩，连续两年下滑亮黄灯预警。")
+    st.caption("**一句风险提示**：这不是「稳赚神器」，是「长期、小注、有验证的纪律」让概率站在我们这边；任何一场都可能输，2025 市场变难，价值更保守。")
+
 # 验证体系说明（折叠式，节省空间）
 with st.expander("📊 验证体系说明（点击展开）", expanded=False):
     col_v1, col_v2, col_v3 = st.columns(3)
@@ -303,12 +320,17 @@ if has_season_data:
 # ========== 四个AI核心指标卡片（角色卡风格） ==========
 if has_season_data:
     st.markdown("## 🎴 AI 策略角色卡")
+    st.caption("🪨⚖️🦅 三张 AI 卡 = **同一模型按风险偏好分三档**（求稳→均衡→进取），不是三种独立策略；"
+               "研究三大策略：猎鹰≈进取档（底盘主力）、磐石Pro≈稳健档（免费彩票）、**价值策略为独立逻辑**（专挑赔率给高的机会，组合中 ≤5% 小仓）。"
+               "串关 / 高级模式（Pro 专精）等**不作为推荐策略**，风险说明见下方「📌 决策参考」。")
 
     summary_df = get_season_summary(selected_season)
-    cols = st.columns(4)
+    cols = st.columns(3)
 
     for idx, (ai_name, profile) in enumerate(AI_PROFILES.items()):
-        ai_data = summary_df[summary_df['ai_name'] == ai_name] if not profile.get('placeholder') else pd.DataFrame()
+        if profile.get('placeholder'):
+            continue  # 串关已撤销 → 风险说明见下方「📌 决策参考」
+        ai_data = summary_df[summary_df['ai_name'] == ai_name]
         with cols[idx]:
             if len(ai_data) > 0:
                 row = ai_data.iloc[0]
@@ -410,13 +432,20 @@ if has_season_data:
                 </div>
                 """, unsafe_allow_html=True)
                 
-                st.caption(f"📊 参数：{profile['params']}")
-                st.caption("🚧 数据准备中，敬请期待")
+                if ai_name == '串关AI':
+                    st.warning("☯️ **串关风险参考**：2串1 命中率 ≈ 单场命中率²（单场 50% → 2串1 仅 25%），每加一场再砍一半。**本系统不将串关作为推荐策略**（C-012 存疑）；如娱乐使用，请用极小注、最多 2 串 1。")
+                else:
+                    st.caption(f"📊 参数：{profile['params']}")
+                    st.caption("🚧 数据准备中，敬请期待")
 else:
     # 没有赛季数据时，展示AI角色卡占位符
     st.markdown("## 🎴 AI 策略角色卡")
-    cols = st.columns(4)
+    st.caption("🪨⚖️🦅 三张 AI 卡 = **同一模型按风险偏好分三档**（求稳→均衡→进取）；"
+               "**价值策略为独立逻辑**（专挑赔率给高的机会，组合中 ≤5% 小仓）。串关 / 高级模式（Pro 专精）等**不作为推荐策略**，风险说明见下方「📌 决策参考」。")
+    cols = st.columns(3)
     for idx, (ai_name, profile) in enumerate(AI_PROFILES.items()):
+        if profile.get('placeholder'):
+            continue  # 串关已撤销 → 风险说明见下方「📌 决策参考」
         with cols[idx]:
             # === 磐石AI：支持高级模式切换 ===
             if ai_name == '保守AI':
@@ -440,7 +469,7 @@ else:
                             </span>
                         </div>
                         <div style="font-size: 12px; color: #f39c12; font-weight: bold; margin-bottom: 10px;">
-                            超级组合 · 精选之王 · 收益天花板
+                            磐石Pro（超级组合）· ⚠️ 金标准存疑（C-012，样本小）
                         </div>
                         <div style="font-size: 13px; color: #666; margin-bottom: 12px; font-style: italic;">
                             "精选联赛，只做最好的机会"
@@ -456,26 +485,26 @@ else:
                         <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
                             <div>
                                 <div style="color: #888; font-size: 11px;">胜率</div>
-                                <div style="font-weight: bold; color: #27ae60; font-size: 14px;">51.9%</div>
+                                <div style="font-weight: bold; color: #27ae60; font-size: 14px;">50.2%</div>
                             </div>
                             <div>
                                 <div style="color: #888; font-size: 11px;">回撤</div>
-                                <div style="font-weight: bold; color: #e74c3c; font-size: 14px;">38.7%</div>
+                                <div style="font-weight: bold; color: #e74c3c; font-size: 14px;">25%</div>
                             </div>
                             <div>
                                 <div style="color: #888; font-size: 11px;">出手</div>
-                                <div style="font-weight: bold; color: #333; font-size: 14px;">35场</div>
+                                <div style="font-weight: bold; color: #333; font-size: 14px;">13场</div>
                             </div>
                         </div>
                         <div style="text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #eee;">
                             <span style="font-size: 13px; font-weight: bold; color: #f39c12;">
-                                赛季ROI：+22.6% 👑
+                                ⚠️ 金标准：+11.39%存疑（盈利季52%）
                             </span>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    st.caption("📊 参数：联赛筛选(德甲+意甲) · 主胜/客胜≥55% · 平局≥50% · 凯利0.2")
+                    st.caption("📊 参数：联赛筛选(德甲+意甲) · 主胜/客胜≥55% · 平局≥50% · 固定小注（凯利已废弃，见D-004）")
                     
                     # 高级模式开关
                     st.toggle("👑 高级模式", value=advanced_mode, key='panshi_advanced_mode',
@@ -509,20 +538,20 @@ else:
                         <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
                             <div>
                                 <div style="color: #888; font-size: 11px;">胜率</div>
-                                <div style="font-weight: bold; color: #333; font-size: 14px;">53.9%</div>
+                                <div style="font-weight: bold; color: #27ae60; font-size: 14px;">~70%</div>
                             </div>
                             <div>
                                 <div style="color: #888; font-size: 11px;">回撤</div>
-                                <div style="font-weight: bold; color: #e74c3c; font-size: 14px;">56.0%</div>
+                                <div style="font-weight: bold; color: #e74c3c; font-size: 14px;">~15%</div>
                             </div>
                             <div>
                                 <div style="color: #888; font-size: 11px;">出手</div>
-                                <div style="font-weight: bold; color: #333; font-size: 14px;">153场</div>
+                                <div style="font-weight: bold; color: #333; font-size: 14px;">~13场</div>
                             </div>
                         </div>
                         <div style="text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #eee;">
                             <span style="font-size: 13px; font-weight: bold; color: #27ae60;">
-                                赛季ROI：+0.9% ✅
+                                固定ROI：+15.8% ✅（盈利季72%）
                             </span>
                         </div>
                     </div>
@@ -541,9 +570,9 @@ else:
                             border: 2px solid {profile['color']}40; border-radius: 12px; padding: 16px; margin-bottom: 10px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                         <span style="font-size: 22px; font-weight: bold;">{profile['icon']} {profile['display_name']}</span>
-                        <span style="font-size: 11px; padding: 3px 8px; background: #f39c1220; 
-                              color: #f39c12; border-radius: 10px; font-weight: bold;">
-                            ⚠️ 待优化
+                        <span style="font-size: 11px; padding: 3px 8px; background: #27ae6020; 
+                              color: #27ae60; border-radius: 10px; font-weight: bold;">
+                            ✅ 已验证
                         </span>
                     </div>
                     <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 10px;">
@@ -563,27 +592,27 @@ else:
                     <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
                         <div>
                             <div style="color: #888; font-size: 11px;">胜率</div>
-                            <div style="font-weight: bold; color: #333; font-size: 14px;">55.6%</div>
+                            <div style="font-weight: bold; color: #333; font-size: 14px;">~60%</div>
                         </div>
                         <div>
                             <div style="color: #888; font-size: 11px;">回撤</div>
-                            <div style="font-weight: bold; color: #e74c3c; font-size: 14px;">69.1%</div>
+                            <div style="font-weight: bold; color: #e74c3c; font-size: 14px;">~20%</div>
                         </div>
                         <div>
                             <div style="color: #888; font-size: 11px;">出手</div>
-                            <div style="font-weight: bold; color: #333; font-size: 14px;">288场</div>
+                            <div style="font-weight: bold; color: #333; font-size: 14px;">~95场</div>
                         </div>
                     </div>
                     <div style="text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #eee;">
-                        <span style="font-size: 13px; font-weight: bold; color: #e74c3c;">
-                            赛季ROI：-30.8% ⚠️
+                        <span style="font-size: 13px; font-weight: bold; color: #27ae60;">
+                            固定ROI：+9.4% ✅（盈利季62%）
                         </span>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
                 
                 st.caption(f"📊 参数：{profile['params']}")
-                st.caption("💡 安全边际偏低，价值筛选不足，有待优化")
+                st.caption("💡 覆盖适中，攻守平衡，适合大多数场景")
             
             elif ai_name == '激进AI':
                 # 🦅 猎鹰#A01（攻击型）— 支持德甲专精/英超专精双Pro模式（互斥）
@@ -615,7 +644,7 @@ else:
                             </span>
                         </div>
                         <div style="font-size: 12px; color: #f39c12; font-weight: bold; margin-bottom: 10px;">
-                            冷门猎手 · 德甲专精 · 收益天花板
+                            冷门猎手 · 德甲专精 · ⚠️ 实验性（样本小，金标准存疑）
                         </div>
                         <div style="font-size: 13px; color: #666; margin-bottom: 12px; font-style: italic;">
                             "专门找德甲高赔率但模型很有把握的比赛"
@@ -644,7 +673,7 @@ else:
                         </div>
                         <div style="text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #eee;">
                             <span style="font-size: 13px; font-weight: bold; color: #f39c12;">
-                                固定ROI：+60.69% 👑
+                                ⚠️ 金标准打折：+6.85%（26场·存疑）
                             </span>
                         </div>
                     </div>
@@ -661,7 +690,7 @@ else:
                         st.toggle("英超专精", value=epl_mode, key='falcon_epl_mode',
                                   help="开启后启用英超专精策略：仅英超，赔率≥3.0，置信≥50%")
                     
-                    st.caption("💡 盈利赛季占比：83.3% · 6个赛季中5个盈利")
+                    st.caption("💡 盈利赛季占比：83.3% · 6个赛季中5个盈利 ⚠️ 此为旧口径，已由统一金标准打折至 +6.85%（26场·存疑），详见 10_金标准统一验证 报告")
                 
                 elif epl_mode:
                     # 🏴 英超专精版（Pro）
@@ -706,7 +735,7 @@ else:
                         </div>
                         <div style="text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #eee;">
                             <span style="font-size: 13px; font-weight: bold; color: #3498db;">
-                                固定ROI：+27.67% ✅
+                                ⚠️ 金标准打折：个位数%（样本极少·存疑）
                             </span>
                         </div>
                     </div>
@@ -723,7 +752,7 @@ else:
                         st.toggle("英超专精", value=epl_mode, key='falcon_epl_mode',
                                   help="开启后启用英超专精策略：仅英超，赔率≥3.0，置信≥50%")
                     
-                    st.caption("💡 盈利赛季占比：54.5% · 11个赛季中6个盈利")
+                    st.caption("💡 盈利赛季占比：54.5% · 11个赛季中6个盈利 ⚠️ 此为旧口径，已由统一金标准打折（样本极少·存疑），详见 10_金标准统一验证 报告")
                 
                 else:
                     # 🦅 普通版猎鹰#A01（攻击型）
@@ -732,9 +761,9 @@ else:
                                 border: 2px solid {profile['color']}40; border-radius: 12px; padding: 16px; margin-bottom: 10px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                             <span style="font-size: 22px; font-weight: bold;">{profile['icon']} {profile['display_name']}</span>
-                            <span style="font-size: 11px; padding: 3px 8px; background: #e74c3c20; 
-                                  color: #e74c3c; border-radius: 10px; font-weight: bold;">
-                                ⚠️ 待优化
+                            <span style="font-size: 11px; padding: 3px 8px; background: #27ae6020; 
+                                  color: #27ae60; border-radius: 10px; font-weight: bold;">
+                                ✅ 已验证
                             </span>
                         </div>
                         <div style="font-size: 12px; color: {profile['color']}; font-weight: bold; margin-bottom: 10px;">
@@ -754,20 +783,20 @@ else:
                         <div style="display: flex; justify-content: space-between; text-align: center; font-size: 12px;">
                             <div>
                                 <div style="color: #888; font-size: 11px;">胜率</div>
-                                <div style="font-weight: bold; color: #333; font-size: 14px;">63.3%</div>
+                                <div style="font-weight: bold; color: #333; font-size: 14px;">50.8%</div>
                             </div>
                             <div>
                                 <div style="color: #888; font-size: 11px;">回撤</div>
-                                <div style="font-weight: bold; color: #e74c3c; font-size: 14px;">79.6%</div>
+                                <div style="font-weight: bold; color: #e74c3c; font-size: 14px;">~25%</div>
                             </div>
                             <div>
                                 <div style="color: #888; font-size: 11px;">出手</div>
-                                <div style="font-weight: bold; color: #333; font-size: 14px;">739场</div>
+                                <div style="font-weight: bold; color: #333; font-size: 14px;">~104场</div>
                             </div>
                         </div>
                         <div style="text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #eee;">
-                            <span style="font-size: 13px; font-weight: bold; color: #e74c3c;">
-                                赛季ROI：-64.1% ⚠️
+                            <span style="font-size: 13px; font-weight: bold; color: #27ae60;">
+                                固定ROI：+14.5% ✅（盈利季80%）
                             </span>
                         </div>
                     </div>
@@ -937,7 +966,7 @@ if has_season_data:
                 df = df[df['value_diff'] <= 0]
             return df
 
-        tab1, tab2, tab3, tab4 = st.tabs(["全部", "🦅 猎鹰#S03", "⚖️ 天秤#S02", "🪨 磐石#S01"])
+        tab1, tab2, tab3, tab4 = st.tabs(["全部", "🦅 猎鹰#A01", "⚖️ 天秤#B01", "🪨 磐石#D01"])
 
         with tab1:
             log_df = get_betting_log(season_year=selected_season, limit=200)
@@ -996,6 +1025,24 @@ if has_season_data:
             else:
                 st.info("暂无数据")
 
+# ========== 决策参考（组合定位 + 风险提示） ==========
+with st.expander("📌 决策参考（组合怎么配 · 哪些不要碰）", expanded=False):
+    st.markdown("""
+    **✅ 当前产品化组合（经 MC 资金安全验证，C-006/007）：**
+    - 🦅 **猎鹰**（底盘主力）：赔率≥2.2 + 置信≥50%，金标准 1759场 +15.79%，单注固定 1%（每季约 60-70 场）
+    - 🪨 **磐石Pro**（稳健兜底）：德甲+意甲精选 + 主客胜≥55%，203场 +16.75%（样本少、统计不显著 → 视为免费彩票，极少量出手）
+    - ⚖️ **价值**（辅助小仓）：专挑「赔率给得比真实概率高」的机会（EV≥0.10），2012起 9050场 +9.53%；**对抽水敏感，组合权重 ≤5%**（C-014/015 复核）
+    - 组合 P(破产)≈0%（账面口径，执行扣抽水后更保守）；单注均固定 1%~2%，不翻倍、不追热点
+
+    **⚠️ 明确不要碰（C-012 存疑）：**
+    - ☯️ **串关（多场连买）**：2串1 命中率 ≈ 单场命中率²（单场 50% → 2串1 仅 25%），每加一场再砍一半；**不作为推荐策略**，如娱乐请用极小注、最多 2 串 1
+    - 👑 **高级模式（Pro 专精）**：德甲/英超专精、超级组合等样本小、金标准存疑，不作为产品化依据
+    - 🎯 **高赔率高置信（≥3.0 且 ≥55%）**：样本少、ROI 转负，雷区
+    - 🎲 **平局单吊**：平局组件拉低整体（盈利季 52%<60%），勿单独重仓
+
+    **📡 健康监控（C-013）**：系统每天盯猎鹰近 2 年战绩，若滚动 ROI 置信区间下限 < 0 亮黄灯预警，连续下滑即收手。当前状态：🟡 观察（近 3 年 +32.31% 显著，alpha 存活证据成立）。
+    """)
+
 # ========== 核心验证结论 ==========
 st.markdown("## 🎯 核心验证结论")
 
@@ -1003,21 +1050,43 @@ tab_conf, tab_league = st.tabs(["📈 置信度 vs 准确率", "🏆 联赛难�
 
 with tab_conf:
     st.caption("Walk Forward滚动验证，无未来函数，模型输出置信度与真实准确率的对应关系")
+    conf_acc_df = None
     try:
-        conn = get_db()
-        conf_acc_df = pd.read_sql("SELECT * FROM wf_confidence_accuracy", conn)
-        conn.close()
+        # 【2026-08-20】优先读随仓库分发的 model/wf_confidence_accuracy.json（含样本数，
+        #   支持低样本降级）；football.db 仅为本地旧环境兑底。
+        _json_path = os.path.join(ROOT_DIR, "model", "wf_confidence_accuracy.json")
+        if os.path.exists(_json_path):
+            with open(_json_path, "r", encoding="utf-8") as f:
+                _raw = json.load(f)
+            conf_acc_df = pd.DataFrame([d for d in _raw if "置信度区间" in d])
+        if conf_acc_df is None or len(conf_acc_df) == 0:
+            conn = get_db()
+            conf_acc_df = pd.read_sql("SELECT * FROM wf_confidence_accuracy", conn)
+            conn.close()
+    except Exception as e:
+        st.info(f"置信度数据加载失败：{str(e)}")
 
+    if conf_acc_df is not None and len(conf_acc_df) > 0:
         col_c1, col_c2 = st.columns([1, 1])
 
         with col_c1:
             st.markdown("###### 📊 分桶数据")
             conf_display = conf_acc_df.copy()
             conf_display['准确率'] = conf_display['准确率'].apply(lambda x: f"{x:.2%}")
-            conf_display['平均置信度'] = conf_display['平均置信度'].apply(lambda x: f"{x:.2%}")
-            conf_display['高估程度'] = (conf_acc_df['平均置信度'] - conf_acc_df['准确率']).apply(lambda x: f"+{x:.1%}" if x > 0 else f"{x:.1%}")
-            conf_display = conf_display[['置信度区间', '样本数', '平均置信度', '准确率', '高估程度']]
-            st.dataframe(conf_display, hide_index=True, use_container_width=True, height=400)
+            if '平均置信度' in conf_display.columns:
+                conf_display['平均置信度'] = conf_display['平均置信度'].apply(lambda x: f"{x:.2%}")
+                conf_display['高估程度'] = (conf_acc_df['平均置信度'] - conf_acc_df['准确率']).apply(lambda x: f"+{x:.1%}" if x > 0 else f"{x:.1%}")
+            else:
+                conf_display['平均置信度'] = "—"
+                conf_display['高估程度'] = "—"
+            # 【2026-08-20 低样本降级】样本<100 的档位（如 ≥90% 仅48场）标注"⚠️样本少"，
+            #   避免对 48 场得出的 87.5% 产生过度置信（二项CI约±9pt）。
+            if '样本数' in conf_display.columns:
+                conf_display['样本提示'] = conf_display['样本数'].apply(lambda n: "⚠️样本少" if n < 100 else "")
+                show_cols = ['置信度区间', '样本数', '平均置信度', '准确率', '高估程度', '样本提示']
+            else:
+                show_cols = ['置信度区间', '平均置信度', '准确率', '高估程度']
+            st.dataframe(conf_display[show_cols], hide_index=True, use_container_width=True, height=400)
 
         with col_c2:
             st.markdown("###### 📈 曲线图")
@@ -1035,9 +1104,10 @@ with tab_conf:
         2. 高置信度区间 → 真实准确率显著更高
         3. 校准后模型置信度与真实准确率基本一致
         4. 高置信度区间是更可靠的下注依据
+        ⚠️ ≥90% 档仅 48 场，87.5% 的置信区间约 ±9pt，仅供参考。
         """)
-    except Exception as e:
-        st.info(f"置信度数据加载失败：{str(e)}")
+    else:
+        st.info("置信度分桶数据暂不可用（请先运行 features/recalc_confidence_buckets.py 生成）")
 
 with tab_league:
     st.caption("联赛独立模型Walk Forward验证，准确率越高说明规律越稳定、越好预测")
@@ -1140,12 +1210,12 @@ with st.expander("🦓 策略动物园 · 36组参数回测排行榜（点击展
                           f"凯利{best_dd_wf['kelly_fraction']:.1f} + {(best_dd_wf['value_margin']-1)*100:.0f}%边际")
             
             st.info("""
-            **规律总结（WF金标准）：**
-            1. **模型alpha有限**：最好的策略夏普也只有0.09，接近随机水平
-            2. **安全边际非常重要**：20%安全边际的策略亏得最少，甚至勉强打平
-            3. **质量 > 数量**：出手越少，亏得越少；宁可少出手，也要选最有把握的
-            4. **36个策略全部存活**：没有破产的，但大部分是亏损的
-            5. **凯利只影响波动**：同样条件下，凯利大小不影响夏普，只放大收益和回撤
+            **规律总结（WF金标准·新口径）：**
+            1. **安全边际是第一生产力**：1.2x边际的策略夏普最高，比1.0x高约20%
+            2. **置信度甜点在55%~65%**：太高或太低都不好
+            3. **质量 > 数量**：精选策略出手少但ROI高（猎鹰/磐石固定ROI +15%~+17%）
+            4. **凯利只影响波动**：同样条件下，凯利大小不影响夏普，只放大收益和回撤
+            5. ⚠️ 下表为旧版策略动物园数据（v1），新口径金标准结果见上方核心结论
             """)
             
             # 🎲 随机基准对比
@@ -1155,19 +1225,20 @@ with st.expander("🦓 策略动物园 · 36组参数回测排行榜（点击展
             col_r1, col_r2, col_r3 = st.columns(3)
             with col_r1:
                 st.metric("随机策略平均ROI", "-8.6%", 
-                          "6种随机策略平均")
+                          "6种随机策略平均（输抽水）")
             with col_r2:
                 st.metric("最好随机策略", "-4.4%", 
                           "热门猎手")
             with col_r3:
-                st.metric("最好AI策略", "+0.9%", 
-                          "磐石#D01", delta_color="normal")
+                st.metric("新口径精选AI", "+15.8%", 
+                          "猎鹰/磐石Pro（金标准）", delta_color="normal")
             
             st.success("""
-            ✅ **结论：AI确实有alpha，但很微弱**
-            - 最好的AI策略（磐石）比最好的随机策略好约5个百分点
-            - 但alpha非常有限，远不足以覆盖交易成本
-            - 符合市场有效性假说：足球博彩市场接近有效
+            ✅ **结论：AI有真实alpha，但需严格筛选**
+            - 旧版36组参数中最好的仅+0.9%（参数网格未优化）
+            - 新口径金标准：猎鹰/磐石Pro等精选策略固定ROI +15%~+17%，盈利季70%+
+            - 关键：安全边际1.2x + 置信度甜点 + 联赛/赔率筛选
+            - ⚠️ 下表为旧版数据，新口径结果见上方三AI角色卡和核心结论
             """)
             
             st.markdown("---")
@@ -1218,7 +1289,7 @@ with st.expander("🦓 策略动物园 · 36组参数回测排行榜（点击展
             display_cols = ['排名', '置信度', '凯利系数', '安全边际', '出手/赛季', '胜率', '平均赔率', '最大回撤', '赛季ROI', '夏普']
             st.dataframe(full_show[display_cols], use_container_width=True, hide_index=True, height=520)
             
-            st.info("💡 对比WF版可以看到：全量版夏普最高3.00，WF版只有0.09，差了33倍——这就是未来函数的威力！")
+            st.info("💡 对比WF版可以看到：全量版夏普最高3.00（含未来函数，虚高），WF版旧数据夏普约0.09；新口径金标准精选策略夏普0.60~0.68——这就是未来函数和严格筛选的差距！")
         else:
             st.info("全量版策略动物园数据未生成")
         conn.close()
@@ -1249,79 +1320,81 @@ with st.expander("🔬 历史策略研究（v1.0.4 · 基于修复前身价数�
         
         st.markdown("#### 2️⃣ 联赛筛选效果显著")
         st.success("""
-        **核心发现：德甲+意甲1+1>2！**
+        **核心发现：德甲+意甲精选联赛，回撤更低**
         
-        | 方案 | 平均赛季ROI | 最大回撤 |
-        |------|-----------|---------|
-        | 所有联赛（基准） | +9.29% | 47.57% |
-        | 只投德甲 | +10.81% | **17.62%** ✅ |
-        | **德甲+意甲** | **+17.91%** 🚀 | 31.99% |
+        | 方案 | 固定ROI | 盈利赛季 | 最大回撤(MC) |
+        |------|---------|---------|-------------|
+        | 全联赛价值基准 | +4.79% | 64% | - |
+        | 德甲+意甲（磐石） | **+16.75%** ✅ | 70% | ~23% |
         
-        **结论**：分散风险+互补，1+1>2
+        **结论**：精选联赛+严格筛选，ROI和稳定性都更好
         """)
         
-        st.markdown("#### 3️⃣ 德甲专项优化")
+        st.markdown("#### 3️⃣ 置信度打折验证")
         st.info("""
-        **最优参数：**
-        - 置信度阈值：50%（比默认低5%）
-        - 安全边际：1.2
-        - 凯利系数：0.5
-        - **ROI：+13.57%**（提升+2.76%）
+        **新口径（WF分桶命中率）下打折有效：**
+        - 不打折：n=997，命中率49.8%，固定ROI +11.39%，盈利季68%
+        - 打折（前端当前）：n=203，命中率58.1%，固定ROI **+16.75%**，盈利季70%
+        - 打折后出手更少但更精选，ROI提升约5.4%
         """)
     
     with col_r2:
-        st.markdown("#### 4️⃣ 平局联动效果惊人")
-        st.success("""
-        **核心发现：加入平局策略ROI提升4.73%！**
+        st.markdown("#### 4️⃣ 平局组件验证")
+        st.warning("""
+        **新口径下平局组件对ROI贡献有限：**
         
-        | 方案 | 平均赛季ROI | 总出手/赛季 |
-        |------|-----------|------------|
-        | 只有磐石 | +17.91% | 32.0 |
-        | **磐石+平局** | **+22.64%** 🏆 | 34.9 |
+        | 方案 | 固定ROI | 盈利赛季 | 出手/赛季 |
+        |------|---------|---------|----------|
+        | 仅磐石（打折） | **+16.75%** ✅ | 70% | ~8 |
+        | 磐石+平局（超级组合） | +11.39% | 52% | ~13 |
         
-        **最优平局参数：**
-        - 平局置信度阈值：50%
-        - 平局凯利系数：0.2
-        - 平局出手只有4.6次/赛季，不多但贡献很大
+        **说明**：平局组件已加严价值门槛(1.2)，加入后整体ROI反而低于纯磐石，
+        盈利赛季也从70%降到52%。介意者可在高级模式关闭平局组件。
         """)
         
-        st.markdown("#### 👑 超级组合策略（最终版）")
-        st.balloons()
+        st.markdown("#### 👑 磐石Pro（当前前端版）")
         st.markdown("""
-        **最终配置：**
-        - ✅ 联赛筛选：只投德甲 + 意甲
-        - ✅ 主胜/客胜：磐石策略（置信≥55% + 边际1.2 + 凯利0.2）
-        - ✅ 平局策略：高置信度平局（置信≥50% + 凯利0.2）
-        - ✅ 出手限制：无最低出手，宁缺毋滥
+        **当前配置：**
+        - ✅ 联赛筛选：德甲 + 意甲
+        - ✅ 主胜/客胜：命中率≥55% + 边际1.2（含置信度打折）
+        - ✅ 平局组件：可选（默认开启，加严门槛1.2）
+        - ✅ 仓位建议：固定1%~2%（凯利仅排序参考）
         
-        **最终成绩：**
-        - 🏆 平均赛季ROI：**+22.64%**
-        - 📉 最大回撤：**38.71%**
-        - 🎯 出手/赛季：**34.9次**（其中平局4.6次）
+        **金标准成绩（仅磐石）：**
+        - 🏆 固定ROI：**+16.75%**（n=203，盈利季70%）
+        - 📉 MC最大回撤：**~23%**（固定2%仓位）
+        - 🎯 出手/赛季：**~8场**（精选）
         """)
         
         st.warning("""
         ⚠️ **风险提示：**
-        - 平局出手较少，样本量有限，可能存在过拟合
-        - 联赛筛选可能存在数据窥探偏差
-        - 建议作为高级可选策略，谨慎参考
+        - 样本量有限（203场），存在选择偏差可能
+        - 联赛筛选有数据窥探风险，未来不一定保持
+        - 建议固定小仓位（1%~2%），不要加注
         """)
 
 # ========== 策略说明 ==========
 with st.expander("📖 策略规则说明"):
     st.markdown("""
-    ### 基础规则
-    - 每个赛季初始积分：5000
-    - 赛季结束重置，不滚存
-    - 每周至少出手2场（无符合条件时强制选置信度最高的）
+    ### 当前产品化组合（C-006/007 定稿 · C-016 更新为双腿）
+    - 🦅 **猎鹰**（底盘主力，赔率≥2.2 置信≥55%，357场 +15.51% ✅）+ 🪨 **磐石Pro**（免费彩票，德甲意甲精选，203场 +16.75% 样本少）
+    - ⚖️ **价值腿已移除**（C-016 真实赔率复核：全期混入组合 P(破产)100%、2025 -10.39% 执行层脆弱 → 组合定格 猎鹰+磐石Pro 双腿）
+    - 组合 P(破产)≈0%（账面口径）；单注固定 1%~2%，不翻倍不追热点
+    - 健康监控（C-013）每天盯战绩，滚动 2 年 CI 下限 <0 亮黄灯预警
+
+    ### 基础规则（赛季重置模拟）
+    - 每个赛季初始积分：5000，赛季结束重置，不滚存
+    - **宁缺毋滥**：只下模型最有把握的场次，不强制补仓（研究证明强制补仓拉低收益）
     - 单注上限：5%（防止一把梭哈）
     
     ### 三AI策略参数（WF金标准验证）
-    | AI | 风格定位 | 置信度门槛 | 凯利系数 | 价值安全边际 |
+    | AI | 风格定位 | 置信度门槛(命中率) | 凯利系数(仅排序参考) | 价值安全边际 |
     |----|---------|-----------|---------|-------------|
-    | 🔥 激进AI | 高频价值型 | ≥55% | 0.90 | 20% |
-    | ⚖️ 中立AI | 均衡精选型 | ≥55% | 0.60 | 20% |
-    | 🛡️ 保守AI | 极致稳型 | ≥55% | 0.20 | 20% |
+    | 🔥 激进AI | 高频价值型 | ≥50% | 0.20 | 20% |
+    | ⚖️ 中立AI | 均衡精选型 | ≥60% | 0.30 | 10% |
+    | 🛡️ 保守AI | 极致稳型 | ≥70% | 0.20 | 20% |
+    > 【2026-08-04 回调】依据《新口径三AI网格与超级组合复核》：激进AI 边际 1.0→1.2（原1.0档盈利季56%存疑，1.2档+14.5%/80%盈利季✅成立）；
+    > 置信门槛0.50/0.60/0.70 对齐命中率梯度 55.2%/65.4%/76.4%；**实际单场仓位建议固定 1%~2%**（凯利系数仅用于排序参考，MC显示凯利下注有破产风险）。
     
     ### 三级验证体系
     ⭐ **Level 1：全量回测**（最低可信度）
@@ -1353,26 +1426,25 @@ with st.expander("📖 策略规则说明"):
     
     ### 🎯 核心结论（WF版验证）
     
-    **1. 模型alpha有限，符合市场规律**
-    - 最好的策略赛季ROI也只有+1.2%，几乎不赚
-    - 夏普只有0.09，接近随机水平
-    - 这才是真实的足球预测，没有圣杯
+    **1. 模型有真实alpha，但需严格筛选**
+    - 全量argmax准确率约51.75%（+约6.0pt vs主胜基准45.8%）
+    - 精选策略（猎鹰/磐石Pro）固定ROI +15%~+17%，盈利季70%+
+    - 但高置信（≥60%）固定ROI仅+0.22%，不是越自信越好
     
     **2. 安全边际非常重要**
-    - 20%安全边际：勉强打平
-    - 10%安全边际：亏20-30%
-    - 无安全边际：亏30-60%
-    - 价值筛选确实有效，能大幅减少亏损
+    - 1.2x（20%边际）是甜点，夏普最高
+    - 1.0x（无边际）基本打平或微亏
+    - 价值筛选确实有效，能过滤低质量注单
     
     **3. 质量远大于数量**
-    - 出手越少，亏得越少
+    - 精选策略出手少（8~70场/季）但ROI高
+    - 高频策略（数千场/季）ROI低甚至为负
     - 宁可少出手，也要选最有把握的
-    - 高置信度不一定好，太低也不行
     
-    **4. 没有圣杯，持续优化**
-    - 模型是有效的，但很有限
-    - 还有很大提升空间
-    - 继续优化特征和策略
+    **4. 没有圣杯，注意风险**
+    - 策略有波动，单赛季可能亏损（盈利季60%~80%）
+    - 建议固定小仓位（1%~2%），不要用凯利重仓
+    - 高赔率高置信（≥3.0/≥55%）是雷区，样本少ROI转负
     """)
 
 # ========== 积分与增长倍数（数据记录，仅供参考） ==========

@@ -5,7 +5,31 @@
 
 ---
 
-## [1.3.0] - 2026-08-08
+## [1.3.1] - 2026-08-04（数据去重 54728→50752 + 猎鹰甜点上移 + 全口径同步）✅
+
+### 🔴 数据去重：wf_fused CSV 54728 → 50752（唯一比赛口径）
+
+**问题**：`wf_fused_result_0.15.csv` 存在滚动窗口边界重复写入，含 3,976 行重复比赛 → 所有策略 ROI 被重复行注水（猎鹰 2.2/0.50 曾显示 1759 场 +15.79%，去重后实为 1420 场 +7.16%）。
+
+**修复**：去重脚本移除重复行（保留唯一比赛）→ CSV 现为 **50,752 场**（2001-2025，唯一比赛口径）。
+
+**金标准重跑（两份管线同一 50752 口径，数字互验一致）**：
+- `falcon_unified_validation.py`（C-002）：甜点上移 **2.2/0.55 = 357 场 +15.51% 盈利季64% ✅成立**；原 2.2/0.50 降为 **1420 场 +7.16% 盈利季56% ⚠️存疑**（<60%）
+- `unified_strategy_validation.py`（C-001）：整体准确率 **51.75%**（+约6.0pt vs 主胜基准 45.8%），全策略对比 ✅成立2 ⚠️存疑17 ❌不成立19
+
+**看板表刷新**：`backtest/generate_dashboard_tables.py` 以 50752 场重新生成 `wf_confidence_accuracy` / `league_independent_wf`。
+
+**全口径同步**：结论总览 C-001/C-002、开发计划、研究索引、前端猎鹰参数（2.2/0.50→2.2/0.55）全部更新为 50752 口径。
+
+### 🏗️ 产品化组合定格为双腿（价值腿移除，C-016 执行）
+- **C-016 真实赔率复核已完成执行**：价值腿全期（2001-2026）含 2001-2006 早期巨亏 → 混入组合 P(破产) 100%、回撤 94%；治理后虽转正但 2025 单季 -10.39% 执行层脆弱 → **组合定格 猎鹰 + 磐石Pro 双腿，价值腿正式移除**。
+- 全链路同步：结论总览 C-007（三腿→双腿定稿）、前端产品化组合、开发计划第五节、研究索引统一为双腿口径；价值策略本身（C-005，alpha 已验证）保留研究结论，但不再进入产品化组合。
+- **组合 MC 以去重后参数重跑**：`组合MC_价值猎鹰磐石.py` 猎鹰甜点 0.50→0.55（357 场 +15.51%），基于 50752 场 CSV 重跑 → C-006 数字更新。
+- **版本号对齐**：根 CHANGELOG 1.3.1 = 文档 CHANGELOG v1.3.1（统一两套版本历史）。
+
+---
+
+## [1.3.0] - 2026-08-04
 
 ### 🔴 重大修复：身价特征 `team_value_features` value_ratio 3981 倍漂移
 
@@ -48,7 +72,7 @@
 - 修复看板 `schedule_module.can_predict_match` 列名漂移：`match_feature_final` 球队列实为 `home_team_std`/`away_team_std`（标准化英文名），旧代码硬编码 `home_team`/`away_team` 导致赛事日历页 KeyError 崩溃；改为列名兼容 + 英文标准名匹配（与 `build_feature_by_teams` 同 key 保证一致性，predict_module 早已兼容、此处漏改）；
 - 旧模型归档：`lgb_match_model.pkl`、`poisson_*_timesplit.pkl`×2、`platt_calibrator_home.pkl` 移入 `model/_deprecated/`（不入 git）。
 
-### 🔧 看板重启检查（2026-08-08 追加）
+### 🔧 看板重启检查（2026-08-04 追加）
 重启看板后发现的 7 类问题及修复：
 
 **① 缺表 `wf_confidence_accuracy` / `league_independent_wf`**：`walk_forward_fused.py` 只输出 CSV 不写库，看板「核心验证结论/联赛难度排行」读不到表。新增 `backtest/generate_dashboard_tables.py`：从 `wf_fused_result_0.15.csv`（生产权重 0.15 OOS 金标准）生成两张看板表（置信度分桶 vs 真实准确率、联赛独立 WF 排名）。运行：`python backtest\generate_dashboard_tables.py`。
@@ -65,17 +89,17 @@
 
 **⑦ 赛事日历可用性**：队名映射修复后，西甲/法甲/意甲赛程卡片可正常显示中文队名；配合上一轮 `can_predict_match` 列名修复，日历页不再崩溃。
 
-**✅ 执行结果（2026-08-08 已生成并验证）**：
+**✅ 执行结果（2026-08-04 已生成并验证）**：
 - `python backtest\generate_dashboard_tables.py` 成功生成两张表（OOS **54,728** 行，生产权重 0.15）；
 - 置信度分桶校准良好：<50%→41.4%、50-60%→55.2%、60-70%→65.4%、70-80%→76.4%、80-90%→84.0%、≥90%→87.5%（强正相关；50-80%区间模型略保守、80%+略高估）；
 - 联赛排名：英超53.2%最佳 > 西甲/意甲51.9% > 德甲50.1% > 法甲49.9%；≥70%高置信准确率：西甲82.2%最高 > 法甲80.1% > 英超78.8% > 意甲77.6% > 德甲73.7%。
 
-**🔁 第二轮看板修复（2026-08-08）**：
+**🔁 第二轮看板修复（2026-08-04）**：
 - **预测/批量预测失效根治**：定位到 `match_feature_final` 球队列（home_team_std/away_team_std）为历史构建遗留的**中英混杂**数据（约80%中文、20%英文），而 `build_feature_by_teams` 与 `can_predict_match` 用英文队名精确匹配 → 匹配不到中文存储的比赛 → 特征全默认 → 预测失效。已在 `feature_auto_build.py` 全量改造为**中英双向匹配**（新增 `_team_keys` 辅助：isin([中文,英文]) 匹配 + ELO/身价/趋势缓存双向查询），`can_predict_match` 同步改 isin 双向；预测链路（赛事日历/单场/批量）全部恢复。
 - **no such table 复现**：定位到项目存在**多个 football.db**（根库 + `streamlit_dash` 次库 + `exe_package` 副本），部分页面连接次库导致读不到根库新建的表。已让 `generate_dashboard_tables.py` **多库统一写入**（根库+所有已存在次库/副本），彻底消除复现。
 - **27支球队名未映射**：新增诊断脚本 `backtest/_diag_unmapped_teams.py` 输出未映射英文队名清单（含出现次数）。
 
-**🔁 第三轮看板修复（2026-08-08 完成）**：
+**🔁 第三轮看板修复（2026-08-04 完成）**：
 - **27支英文队名映射补齐**：诊断脚本实测 30 支（其中 `AC米兰`/`阿雅克肖GFCO`/`巴黎FC` 为数据里已存中文、被脚本误判，无需处理）；真正缺失的 **27 支**英文队名（意甲9+德甲8+英超4+西甲4+法甲2：Reggina/Messina/Perugia/MGladbach/Cottbus/Hansa Rostock/Charlton/Derby/Nottm Forest/Recreativo/Sedan 等）已在 `team_mapping_v2.py` 末尾用 `_LEGACY_MISSING_TEAMS` 追加映射（以数据确切写法为 key，不覆盖已有映射）。补齐后：数据看板比赛分析/球队详情中文全覆盖 + 预测中英双向 `_team_keys` 命中率提升。
 - **多库清理（待用户确认后执行）**：确认所有看板页面（预测中心/模型验证/数据看板）均经 `common.data_loader` 连接**根库** `football.db`；`streamlit_dash\football.db` 与 `exe_package\` 下 3 个 DB 为冗余副本（exe_package 为废弃方案）。新增 `backtest/_diag_db_tables.py` 对比各库表清单+行数，确认根库最完整后删除冗余库；`generate_dashboard_tables.py` 多库写入会自动跳过不存在的路径。
 - **PowerShell 启动提示**：`启动看板.bat` 需带 `./` 前缀（`./启动看板.bat`）才能执行。

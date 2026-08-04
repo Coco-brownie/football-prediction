@@ -77,9 +77,25 @@ def get_value_features():
     cfg = load_config()
     return cfg["features"]["value_features"]
 
+def get_context_features():
+    """获取比赛情境特征列表（23维）"""
+    cfg = load_config()
+    return cfg["features"]["context_features"]
+
+def get_line_movement_features():
+    """获取赔率线变特征列表（9维）"""
+    cfg = load_config()
+    return cfg["features"]["line_movement_features"]
+
+def get_referee_features():
+    """获取裁判因子特征列表（7维）"""
+    cfg = load_config()
+    return cfg["features"]["referee_features"]
+
 def get_full_feature_list():
-    """获取完整特征列表（52维基础 + 5维身价 = 57维）"""
-    return get_feature_list() + get_value_features()
+    """获取完整特征列表（52维基础 + 5维身价 + 23维情境 + 9维线变 + 7维裁判 = 96维）"""
+    return (get_feature_list() + get_value_features() +
+            get_context_features() + get_line_movement_features() + get_referee_features())
 
 def get_model_params():
     """获取模型默认超参数"""
