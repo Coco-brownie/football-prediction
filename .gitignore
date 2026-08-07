@@ -4,12 +4,13 @@ __pycache__/
 *.pyo
 *.pyd
 
-# ========== 根目录py文件（核心 + common_config，common_config 是全模块依赖必须上传） ==========
+# ========== 根目录py文件（核心 + common_config + verify_db，CI 验证必需） ==========
 /*.py
 !/match_predict.py
 !/team_mapping_v2.py
 !/common_config.py
 !/export_wf_conf_table.py
+!/verify_db.py
 
 # ========== IDE 配置 ==========
 .vscode/
