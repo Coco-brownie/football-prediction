@@ -1,0 +1,33 @@
+# =====================================================================
+# Git 属性声明：保护二进制文件 + 统一文本行尾
+# =====================================================================
+
+# ---- .gitattributes 自身：永远保持 LF（避免被 autocrlf 转成 CRLF 引发误报） ----
+.gitattributes  text eol=lf
+
+# ---- 二进制文件：禁止 git 做行尾转换 / 文本 diff ----
+*.pkl   binary
+*.db    binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.zip   binary
+*.pdf   binary
+*.xlsx  binary
+*.docx  binary
+
+# ---- Windows 批处理脚本：保留 CRLF（.bat 依赖） ----
+*.bat   text eol=crlf
+
+# ---- 文本文件：统一 LF（跨平台一致性） ----
+*.py    text eol=lf
+*.json  text eol=lf
+*.toml  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.md    text eol=lf
+*.csv   text eol=lf
+*.txt   text eol=lf
+*.ini   text eol=lf
