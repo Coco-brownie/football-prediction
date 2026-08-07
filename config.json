@@ -1,7 +1,7 @@
 {
   "project": {
     "name": "football_pred",
-    "version": "1.2.2",
+    "version": "1.4.0",
     "description": "五大联赛足球赛事预测 - LightGBM双子模型"
   },
 
@@ -86,30 +86,6 @@
     ],
     "value_features": [
       "value_ratio", "value_diff_rel", "home_value_rel", "away_value_rel", "value_diff_signed"
-    ],
-    "context_features": [
-      "home_rank", "away_rank",
-      "home_pts", "away_pts",
-      "home_gd", "away_gd",
-      "home_gp", "away_gp",
-      "home_games_7d", "home_games_14d",
-      "away_games_7d", "away_games_14d",
-      "season_month", "is_season_early", "is_season_late",
-      "home_relegation_fight", "home_title_contender", "home_midtable",
-      "away_relegation_fight", "away_title_contender", "away_midtable",
-      "elo_diff_x_home_relegation", "elo_diff_x_away_relegation"
-    ],
-    "line_movement_features": [
-      "ps_line_move_home", "ps_line_move_draw", "ps_line_move_away",
-      "ps_line_direction", "ps_line_magnitude",
-      "ps_model_line_agree", "ps_divergence_score",
-      "ps_open_home_prob", "ps_close_home_prob"
-    ],
-    "referee_features": [
-      "referee_avg_yellow", "referee_avg_red",
-      "referee_home_away_yellow_ratio", "referee_match_count",
-      "home_yellow_avg", "away_yellow_avg",
-      "total_yellow_expected"
     ]
   },
 

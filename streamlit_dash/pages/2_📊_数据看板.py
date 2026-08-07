@@ -98,6 +98,7 @@ for team in all_teams:
 
 # ==================== 顶部筛选栏 ====================
 st.title("📊 数据看板")
+st.caption("💡 用上方筛选器调整 **日期 / 联赛 / 赛季** 后，下方所有统计、排行榜、积分榜、图表都会同步更新。")
 
 # 筛选行
 filter_col1, filter_col2, filter_col3, filter_col4 = st.columns([2, 2, 2, 1])
@@ -240,10 +241,17 @@ try:
     with col_chart:
         st.markdown("###### 📈 准确率对比")
         try:
-            chart_df = league_rank_df.copy()
-            chart_df = chart_df.set_index('联赛')[['整体准确率', '>=70%准确率']]
-            chart_df.columns = ['整体准确率', '高置信准确率(≥70%)']
-            st.bar_chart(chart_df, height=350)
+            import altair as alt
+            _ldata = league_rank_df.copy()
+            _lmelt = _ldata.melt(id_vars=['联赛'], value_vars=['整体准确率', '>=70%准确率'],
+                                 var_name='指标', value_name='准确率')
+            _lchart = alt.Chart(_lmelt).mark_bar().encode(
+                x=alt.X('联赛:N', sort=None, axis=alt.Axis(labelAngle=0, title=None)),
+                xOffset='指标:N',
+                y=alt.Y('准确率:Q', axis=alt.Axis(format='%', title='准确率')),
+                color=alt.Color('指标:N', scale=alt.Scale(scheme='category10'))
+            ).properties(height=350)
+            st.altair_chart(_lchart, use_container_width=True)
         except Exception as e:
             st.caption(f"图表渲染失败：{str(e)}")
 
@@ -264,7 +272,7 @@ st.divider()
 st.subheader("🏆 联赛积分榜")
 
 if sel_league_label == "全部联赛":
-    st.info("请在上方筛选中选择具体联赛，查看对应积分榜")
+    st.info("📌 当前为「全部联赛」视图，积分榜需选中**单个联赛**后展示。\n\n👉 回到顶部筛选器「选择联赛」选一个具体联赛（如英超），即可查看对应积分榜。")
 else:
     # 计算积分榜
     teams = set()
@@ -359,7 +367,8 @@ with tab_team:
         "选择球队", 
         options=team_list, 
         index=0 if team_list else 0,
-        format_func=lambda x: f"{std_2_cn.get(x, x)} ({x})" if std_2_cn.get(x) != x else x
+        format_func=lambda x: f"{std_2_cn.get(x, x)} ({x})" if std_2_cn.get(x) != x else x,
+        help="💡 下拉框支持直接输入球队名快速过滤（如输入「曼城」）"
     )
 
     if sel_team:
@@ -453,14 +462,16 @@ with tab_h2h:
         options=team_list_h, 
         index=0 if team_list_h else 0, 
         key="h2h_home",
-        format_func=lambda x: f"{std_2_cn.get(x, x)} ({x})" if std_2_cn.get(x) != x else x
+        format_func=lambda x: f"{std_2_cn.get(x, x)} ({x})" if std_2_cn.get(x) != x else x,
+        help="💡 下拉框支持直接输入球队名快速过滤（如输入「曼城」）"
     )
     h2 = st.selectbox(
         "客队", 
         options=team_list_h, 
         index=1 if len(team_list_h) > 1 else 0, 
         key="h2h_away",
-        format_func=lambda x: f"{std_2_cn.get(x, x)} ({x})" if std_2_cn.get(x) != x else x
+        format_func=lambda x: f"{std_2_cn.get(x, x)} ({x})" if std_2_cn.get(x) != x else x,
+        help="💡 下拉框支持直接输入球队名快速过滤（如输入「曼城」）"
     )
 
     if h1 and h2 and h1 != h2:
@@ -708,8 +719,8 @@ with st.expander("⚙️ 模型信息（高级）", expanded=False):
     col_m3.metric("融合权重", "主模型85% + 平局15%")
     
     col_m4, col_m5 = st.columns(2)
-    col_m4.metric("WF真实准确率", "51.4%", help="54,728场外样本，无未来函数，argmax口径")
-    col_m5.metric("主胜基准率", "45.8%", help="无脑买主胜的准确率，模型alpha约+5.6pt")
+    col_m4.metric("WF真实准确率", "51.75%", help="50,752场外样本，无未来函数，argmax口径")
+    col_m5.metric("主胜基准率", "45.8%", help="无脑买主胜的准确率，模型alpha约+6.0pt")
     st.info("💡 三模型融合：LightGBM三分类 + 泊松进球回归 + 平局二分类专项，三种不同原理互补")
     
     st.divider()

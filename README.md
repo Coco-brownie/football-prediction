@@ -3,7 +3,7 @@
 五大联赛（英超/西甲/德甲/意甲/法甲）足球赛事胜负预测系统。
 **LightGBM 三分类 + 泊松进球模型 + 平局专项二分类** 三模型融合 + 概率校准。
 
-- 版本：**1.3.0**（2026-08-08）
+- 版本：**1.4.0**（2026-08-07）
 - 技术栈：Python 3.10 / LightGBM / scikit-learn / Streamlit / SQLite
 
 ---
@@ -20,7 +20,7 @@
 
 | 指标 | 数值 |
 |---|---|
-| 整体准确率（无未来函数） | **52.01%**（三分类随机基线 33.3%） |
+| 整体准确率（无未来函数） | **51.75%**（去重后 50752 场唯一比赛口径 · 三分类随机基线 33.3%） |
 | 特征维度 | **57**（52 基础 + 5 身价） |
 | 身价特征真实覆盖 | **60.9%**（2008 起，ASOF 无未来值） |
 | 身价特征重要性 | 4.71%（健康占比） |
@@ -48,7 +48,7 @@ football_pred/
 ├── features/                 # 离线特征构建脚本（含 build_team_value_features.py）
 ├── training/                 # 训练脚本（train_all_clean.py 等，仅本地执行）
 ├── backtest/                 # 回测/验证脚本（walk_forward 金标准）
-└── football.db               # SQLite 数据库（本地数据资产，不入 git）
+└── football.db               # SQLite 数据库（约 64MB，随代码入 git）
 ```
 
 ## 🚀 快速开始（本地）
@@ -73,15 +73,15 @@ python backtest\walk_forward.py              # WF 金标准验证
 | 代码（根目录核心 + common/ + streamlit_dash/） | ✅ | 完整上传 |
 | `model/` 模型产物 | ✅ | 核心产物 |
 | `common_config.py` / `config.json` | ✅ | **运行必需，已放行** |
-| `football.db` 数据库 | ❌ | 173MB 本地数据资产，部署时单独同步 |
+| `football.db` 数据库 | ✅ | 约 64MB（已瘦身），随代码上传 |
 | `features/ backtest/ training/ data/ tools/` | ❌ | 离线维护脚本，仅本地执行 |
 | `model/_deprecated/ model_backup_*/` | ❌ | 归档 |
 
 **云端/新环境部署步骤**：
-1. `git clone`（拉取代码 + 模型 + 配置）
-2. 单独同步 `football.db`（含 `team_value_features` 重建表 + `pred_result/pred_confidence` 回填）
-3. `pip install -r requirements.txt`
-4. `streamlit run streamlit_dash/⚽_预测中心.py`
+1. `git clone`（拉取代码 + 模型 + 配置 + football.db）
+2. `pip install -r requirements.txt`
+3. `python run.py`（或 `streamlit run streamlit_dash/⚽_预测中心.py`）
+4. 部署后验证：`python -m pytest tests/ -q --tb=short` + `python verify_db.py`
 
 > 📖 **详细部署步骤 + 数据库同步手册（表清单/同步方式/部署后验证）见 `DEPLOYMENT.md`**
 
@@ -93,12 +93,18 @@ python backtest\walk_forward.py              # WF 金标准验证
 1. **身价特征数据修复**：ASOF 快照重建 + 500 万下限清洗 + 零未来值
 2. **全模型重训**：57 维主模型，OOS 53.39%
 3. **统计口径统一**：train/backtest/walk_forward 全部 60.9% 真实覆盖
-4. **金标准验证**：WF 52.01% 无未来函数
+4. **金标准验证**：WF 51.75% 无未来函数（去重后 50752 场）
 5. **生产健康检查**：全量回填 52561 条，57 维链路健康
 6. **推送健全性**：放行 common_config.py + config.json，新增 CHANGELOG/README
 
-### 🔜 后续规划（策略层）
-- [ ] **价值投注策略**：模型概率 vs 赔率隐含概率差值，只下注正期望场次（当前 ROI 为负的改善方向）
-- [ ] **平局独立通道**：draw_binary 置信度阈值化输出，避免融合权重硬拉买"尾巴货"
+### ✅ 已完成（v1.4.0）
+1. **口径收敛**：猎鹰/磐石Pro 降级为研究侧叙述（产品口径真实可成交赔率未过 Bonferroni → 待 2026-2027 独立期复现）
+2. **看板 AI 卡片统一研究侧措辞**：移除「已定稿/已验证/可产品化/仓位建议」等暗示性描述（策略文档保留完整记录）
+3. **文档口径统一**：结论总览新增 C-017/D-005，研究索引磐石Pro 统一 113 场口径
+4. **版本号统一出口**：config.json 为权威源（1.4.0）
+
+### 🔜 后续规划（研究侧）
+- [ ] **猎鹰 2026-2027 独立期复现**：真实可成交赔率口径下 2.2/0.55 未过 Bonferroni → 独立赛季数据验证后再评估（当前仅探索性候选）
+- [ ] **平局独立通道**：draw_binary 置信度阈值化输出（研究观察，不可单独下注）
 - [ ] **联赛特化模型**：按联赛单独验证/调参（当前 5 联赛 50.3%~53.1% 分布）
-- [ ] **在线更新链路**：周更快照 → 自动重建身价特征 → 自动重训 → 自动回填
+- [x] **在线更新链路**：周更快照 → 自动重建身价特征 → 自动重训 + 自动回填（`update_weekly.py --retrain`）

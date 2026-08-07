@@ -332,6 +332,7 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
         return
 
     st.subheader("📊 输入市场赔率")
+    st.caption("💡 下方赔率默认为**示例值**（主胜2.50 / 平3.30 / 客3.00），请填入你实际看到的盘口赔率；也可点「🔄 自动获取赔率」自动填充。")
 
     # 自动获取赔率按钮
     auto_col1, auto_col2 = st.columns([1, 3])
@@ -404,7 +405,12 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
 
     # 高级设置（默认收起）
     with st.expander("⚙️ 高级设置", expanded=False):
-        scene_type = st.radio("主客场场景", ["主队主场作战", "客队客场作战"], key="radio_scene_type")
+        scene_type = st.radio(
+            "主客场场景",
+            ["主队主场作战", "客队客场作战"],
+            key="radio_scene_type",
+            help="💡 日常预测默认「主队主场」即可，无需调整；仅当你明确知道本场是中立场/特殊赛制时才切换为「客队客场」。"
+        )
         is_home = True if scene_type == "主队主场作战" else False
         st.caption("默认主队主场即可。切换为「客队客场」可模拟换位预测，日常预测用不到")
 
@@ -485,11 +491,11 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
         # 置信度分级提示（新口径：置信度=该档位历史命中率，最高约87%）
         conf = pred_res["confidence"]
         if conf >= 0.60:
-            st.success(f"🔴 高命中率档 — 历史命中率≥60%，可重点参考")
+            st.success(f"🔴 高命中率档 — 历史命中率≥60%（研究参考）")
         elif conf >= 0.50:
-            st.warning(f"🟡 中等命中率档 — 历史命中率50%~60%，有一定参考价值，建议结合其他分析")
+            st.warning(f"🟡 中等命中率档 — 历史命中率50%~60%，研究参考价值一般")
         else:
-            st.info(f"🟢 低命中率档 — 历史命中率<50%，不确定性较大，仅供参考")
+            st.info(f"🟢 低命中率档 — 历史命中率<50%，不确定性较大，仅研究参考")
 
         # 💎 价值决策
 
@@ -534,24 +540,24 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
 
         if best_ev > 0.08:
             value_level = "🟢 显著置信度优势"
-            value_desc = f"模型显著看好{best_name}，置信度差值+{best_ev:.1%}，验证价值充足"
+            value_desc = f"模型显著看好{best_name}，置信度差值+{best_ev:.1%}（研究观察）"
         elif best_ev > 0.03:
             value_level = "🟡 存在置信度优势"
-            value_desc = f"{best_name}方向有正置信度差值，但空间有限"
+            value_desc = f"{best_name}方向有正置信度差值，但空间有限（研究观察）"
         elif best_ev > 0:
             value_level = "🟡 微弱置信度优势"
-            value_desc = f"{best_name}置信度差值略正，接近公允定价"
+            value_desc = f"{best_name}置信度差值略正，接近公允定价（研究观察）"
         else:
             value_level = "🔴 无置信度优势"
-            value_desc = "三个方向置信度差值均为负，市场定价均高于模型判断"
+            value_desc = "三个方向置信度差值均为负，市场定价均高于模型判断（研究观察）"
 
         # 置信度对比卡片
         if best_ev > 0 and best_kelly > 0:
             position_text = f"保守 {best_kelly*0.25:.1%} ~ 激进 {best_kelly:.1%}"
-            position_sub = f"理论最优：{best_name}"
+            position_sub = f"研究参考方向：{best_name}"
         else:
             position_text = "不建议"
-            position_sub = "无验证价值"
+            position_sub = "研究无正预期"
 
         st.markdown(f"""
         <div style="padding:14px;background:#f0f7ff;border-radius:10px;margin-bottom:8px">
@@ -753,5 +759,5 @@ def render_match_predict_panel(cn_2_std=None, std_2_cn=None, user_name=None):
             })
             styled_detail = style_match_result_df(detail_df)
             st.dataframe(styled_detail, use_container_width=True)
-            st.caption(f"最终结果为融合输出（{pred_res['model_detail']['fusion_weight']}），模型经 54,728 场外样本 WF 金标准统一验证，整体准确率约 51.4%（主胜基准 45.8%）；注意高置信（≥60%）命中率约 71% 但固定ROI 仅 +0.22%，置信度高≠有正收益")
+            st.caption(f"最终结果为融合输出（{pred_res['model_detail']['fusion_weight']}），模型经 50,752 场外样本 WF 金标准统一验证，整体准确率约 51.75%（主胜基准 45.8%）；注意高置信（≥60%）命中率约 71% 但固定ROI 仅 +0.22%，置信度高≠有正收益")
 

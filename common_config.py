@@ -78,24 +78,44 @@ def get_value_features():
     return cfg["features"]["value_features"]
 
 def get_context_features():
-    """获取比赛情境特征列表（23维）"""
-    cfg = load_config()
-    return cfg["features"]["context_features"]
+    """获取比赛情境特征列表（23维，已废弃）
+    【2026-08-07 1.4.0：96 维已从 config.json 移除，归档至 model/_deprecated/config_features_96dim.json。
+    本函数仅供研究追溯（如 walk_forward_fused.py --full 口径对比），生产代码禁止调用。】
+    """
+    return _get_deprecated_96dim("context_features")
 
 def get_line_movement_features():
-    """获取赔率线变特征列表（9维）"""
-    cfg = load_config()
-    return cfg["features"]["line_movement_features"]
+    """获取赔率线变特征列表（9维，已废弃）
+    【2026-08-07 1.4.0：96 维已从 config.json 移除，归档至 model/_deprecated/config_features_96dim.json。
+    本函数仅供研究追溯，生产代码禁止调用。】
+    """
+    return _get_deprecated_96dim("line_movement_features")
 
 def get_referee_features():
-    """获取裁判因子特征列表（7维）"""
-    cfg = load_config()
-    return cfg["features"]["referee_features"]
+    """获取裁判因子特征列表（7维，已废弃）
+    【2026-08-07 1.4.0：96 维已从 config.json 移除，归档至 model/_deprecated/config_features_96dim.json。
+    本函数仅供研究追溯，生产代码禁止调用。】
+    """
+    return _get_deprecated_96dim("referee_features")
+
+def _get_deprecated_96dim(key):
+    """从归档文件读取废弃的 96 维特征定义（仅供研究追溯，生产代码禁止引用）"""
+    path = os.path.join(ROOT_DIR, "model", "_deprecated", "config_features_96dim.json")
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"【归档缺失】未找到 96 维特征归档文件：{path}\n"
+            f"96 维已于 1.4.0 废弃并移出 config.json，如需口径对比研究请恢复归档文件。"
+        )
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return data.get(key, [])
 
 def get_full_feature_list():
-    """获取完整特征列表（52维基础 + 5维身价 + 23维情境 + 9维线变 + 7维裁判 = 96维）"""
-    return (get_feature_list() + get_value_features() +
-            get_context_features() + get_line_movement_features() + get_referee_features())
+    """获取完整特征列表 = 57 维产品口径（52维基础 + 5维身价）
+    【2026-08-07 1.4.0：96 维已废弃（口径漂移根源，见结论总览 D-005），
+    本函数收敛为与训练/推理端一致的 57 维。96 维研究追溯请用 get_context_features() 等归档读取函数。】
+    """
+    return get_feature_list() + get_value_features()
 
 def get_model_params():
     """获取模型默认超参数"""

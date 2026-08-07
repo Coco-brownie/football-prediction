@@ -155,8 +155,11 @@ else:
     next_match_date = "暂无"
 
 with col1:
-    st.metric("🎯 今日可预测", f"{today_matches} 场")
-    st.caption(f"最近开赛：{next_match_date}")
+    st.metric("🎯 今日赛事", f"{today_matches} 场")
+    if today_matches == 0:
+        st.caption(f"📭 今日暂无赛程（休赛日）· 最近开赛 {next_match_date}")
+    else:
+        st.caption(f"最近开赛：{next_match_date}")
     st.caption("↓ 下方点击赛事卡片开始预测")
 
 # 卡片2：本周赛事
@@ -172,8 +175,8 @@ with col2:
 
 # 卡片3：模型验证准确率
 with col3:
-    st.metric("🤖 模型验证准确率", "51.4%")
-    st.caption("基于 54,728 场外样本 · WF金标准统一验证")
+    st.metric("🤖 模型验证准确率", "51.75%")
+    st.caption("基于 50,752 场外样本 · WF金标准统一验证")
     st.caption("argmax口径 · 主胜基准 45.8% · 详见统一验证报告")
 
 st.divider()
@@ -181,15 +184,15 @@ st.divider()
 # ===== 📖 一句话看懂本系统策略（普通人版，折叠） =====
 with st.expander("📖 一句话看懂本系统策略（给普通人）", expanded=False):
     st.markdown(
-        "> **用 AI 在五大联赛里挑「模型最有把握 + 赔率给得划算」的比赛，每次只下总资金很小的比例，"
-        "靠长期纪律累积优势——不赌单场，赌「做过验证、长期占优」的概率。**"
+        "> **本项目为机器学习研究项目**：用 AI 在五大联赛里识别「模型最有把握 + 赔率给得划算」的比赛，"
+        "所有数字均为历史回测/外样本验证数据，不代表未来表现，不构成任何建议。**"
     )
     st.markdown(
-        "- 🦅 **猎鹰**（进取·主力）：高赔冷门 + 模型高把握，24 年 1759 次出手每 100 元拿回约 116 元（+15.8%）。\n"
-        "- 🪨 **磐石Pro**（稳健·极少出手）：只做高命中率场次，兜底降波动。\n"
-        "- ⚖️ **价值**（辅助·小仓）：专挑赔率给高的机会，细水长流，只给 ≤5% 仓位。\n\n"
-        "**安全底线**：小注（单注约1%）· 纪律（只下模型出手的场次）· 监控（每天盯战绩，下滑亮黄灯预警）。\n"
-        "**风险提示**：任何一场都可能输，这是「长期、小注、有验证的纪律」，不是稳赚神器。"
+        "- 🦅 **猎鹰**（研究·高赔冷门档）：外样本 357 次出手（赔率≥2.2 置信≥55%）样本内 ROI +15.51%；"
+        "真实可成交赔率口径（Pinnacle 终盘）下样本偏薄、未过 Bonferroni → **待 2026-2027 独立期复现，当前仅研究参考**。\n"
+        "- 🪨 **磐石Pro**（研究·高命中档）：研究样本 113 场 +13.16%，聚类 CI 含 0 → 统计显著不成立，仅研究观察。\n"
+        "- ⚖️ **价值**（已移除）：曾有研究 alpha，但无后见之明验证不成立（C-015），**已从组合移除**（C-016）。\n\n"
+        "**风险提示**：以上均为历史研究数据，不代表未来收益；任何策略在独立期复现前不构成任何建议。"
     )
 
 # ===== 🎯 今日 AI 看点（方向1：首屏高价值内容，给你回来看的理由） =====
@@ -244,8 +247,8 @@ if _focus_cache_key not in st.session_state:
 with st.expander("🎯 **今日 AI 看点**（未来 2 天 · 三AI共识精选 · 每天自动更新）", expanded=True):
     col_h1, col_h2 = st.columns([3, 1])
     with col_h1:
-        st.caption("三个 AI（🦅猎鹰 / ⚖️天秤 / 🪨磐石）共同看好的赛事，一眼看到今天最值得关注的场次。基于默认赔率降级预测，仅供研究参考。"
-                   "（此三AI共识**不含价值策略**——价值是组合中 ≤5% 的独立小仓，见模型验证页「📌 决策参考」）")
+        st.caption("三个 AI（🦅猎鹰 / ⚖️天秤 / 🪨磐石）共同看好的赛事（研究参考，不构成任何建议）。基于默认赔率降级预测。"
+                   "三 AI 为同一模型按风险偏好分三档的研究性输出；价值策略已从组合移除（C-016），不再纳入。")
     with col_h2:
         refresh_focus = st.button("🔄 刷新今日看点", key="btn_refresh_focus", use_container_width=True)
 
@@ -254,6 +257,13 @@ with st.expander("🎯 **今日 AI 看点**（未来 2 天 · 三AI共识精选 
             st.session_state[_focus_cache_key] = _compute_ai_focus(2, "关闭")
 
     _focus_df = st.session_state.get(_focus_cache_key)
+    # 空状态分类：先判断未来2天是否有五大联赛赛程（决定是「暂停更新」还是「有赛程但模型保守」）
+    _t_now = pd.Timestamp.now().normalize()
+    _upcoming_cnt = len(df_schedule[
+        (df_schedule["match_date"].dt.normalize() >= _t_now) &
+        (df_schedule["match_date"].dt.normalize() <= _t_now + pd.Timedelta(days=2)) &
+        (df_schedule["league_code"].isin(get_all_known_codes()))
+    ])
     if _focus_df is not None and len(_focus_df) > 0:
         _top = _focus_df[_focus_df["共识等级"].isin(["🤝 三AI共识", "👥 两AI看好"])].sort_values("置信度", ascending=False).head(5)
         if len(_top) > 0:
@@ -270,7 +280,10 @@ with st.expander("🎯 **今日 AI 看点**（未来 2 天 · 三AI共识精选 
         else:
             st.caption("未来 2 天暂无三AI共识赛事（模型保守优先），可点击「刷新」或到 AI 出手参考查看完整列表。")
     else:
-        st.caption("👆 点击右上「刷新今日看点」生成今日精选（首次约需 10~30 秒计算）。")
+        if _upcoming_cnt == 0:
+            st.info("📭 未来 2 天暂无五大联赛赛事，今日 AI 看点暂停更新（有新赛程后自动恢复）。")
+        else:
+            st.caption("👆 点击右上「刷新今日看点」生成今日精选（首次约需 10~30 秒计算）；若刷新后仍为空，说明近期场次模型评估保守或历史数据不足。")
 
 st.divider()
 
@@ -287,12 +300,11 @@ with tab_calendar:
 
     # ===== AI 观点区块（折叠式）=====
     st.divider()
-    st.info("✨ **AI 出手参考（组合出手单）**：三AI共识 + 💎价值 + 👑磐石Pro，点击下方展开查看 ↓")
-    with st.expander("🤖 展开 AI 出手参考", expanded=False):
-        st.caption("基于当前模型批量计算未来赛事的**组合出手单**（三AI + 价值 + 磐石Pro），仅供决策参考")
-        st.caption("🦅⚖️🪨 **三AI**（猎鹰/天秤/磐石）= 同一模型按风险偏好分三档（共识基础）；💎 **价值** = 独立小仓 EV≥10%（组合 ≤5%）；👑 **磐石Pro** = 保守AI高级模式（德甲/意甲精选，样本少作免费彩票）")
-        st.caption("⚠️ 仓位提示：实际单场仓位建议固定 **1%~2%**（凯利系数仅用于排序参考，长线有破产风险）；"
-                  "新口径三AI网格已验证成立：固定ROI +14.5%/+9.4%/+15.8%，盈利季 80%/62%/72%")
+    st.info("✨ **AI 研究参考**：三AI共识 + 磐石Pro，点击下方展开查看 ↓（纯研究输出，不构成任何建议）")
+    with st.expander("🤖 展开 AI 研究参考", expanded=False):
+        st.caption("基于当前模型批量计算未来赛事的**AI 研究参考**（三AI + 磐石Pro），仅供研究，不构成任何决策建议")
+        st.caption("🦅⚖️🪨 **三AI**（猎鹰/天秤/磐石）= 同一模型按风险偏好分三档；👑 **磐石Pro** = 保守AI高级模式（德甲/意甲精选，样本少、统计不显著，仅研究观察）；💎 **价值** 因无后见之明验证不成立已从组合移除（C-015/016）")
+        st.caption("⚠️ 以上为历史回测数字（三AI网格样本内固定ROI +14.5%/+9.4%/+15.8%），不代表未来收益；不构成任何仓位建议。")
         
         # 日期范围选择（按周划分，贴合周/半月数据更新节奏；不再用抽象「未来N天」）
         import datetime as _dt
@@ -330,27 +342,27 @@ with tab_calendar:
 
         st.info(f"📅 {_range_label} · 共 {len(df_upcoming)} 场五大联赛赛事")
         
-        # 猎鹰Plus（普通用户不关心「版本」，只关心是否启用已验证策略）
-        # 【2026-08-21 简化】改为单一 checkbox 默认启用「基础版」（已验证 +15.79% 可产品化）；
+        # 猎鹰Plus（研究档：冷门猎手专精，待独立期复现）
+        # 【2026-08-21 简化】改为单一 checkbox（默认关闭，研究档）；基础版样本内 +15.79% 但产品口径未过 Bonferroni；
         #  德甲/英超专精为实验性 Beta（外样本存疑、每季仅约3~5场），不作为产品化依据，已从界面移除，
         #  避免用户面对「关闭/基础版/德甲/英超」四选一不知所措。
         enable_falcon_plus = st.checkbox(
-            "🦅 启用猎鹰Plus基础版（已验证 +15.8%）",
-            value=True,
+            "🦅 猎鹰Plus（研究·高赔冷门精选档）",
+            value=False,
             key="ai_view_falcon_plus",
-            help="猎鹰Plus基础版 = 猎鹰（激进档）加强：赔率≥2.5 + 置信≥55% 的冷门猎手精选，"
-                 "全联赛固定ROI +15.79%（✅已通过WF金标准验证、可产品化，MC固定1~2%安全）。"
-                 "德甲/英超专精为【实验性 Beta】，外样本存疑（每季仅约3~5场），不作为产品化依据，故不提供选择。"
+            help="猎鹰Plus（研究档）= 猎鹰（激进档）加强：赔率≥2.5 + 置信≥55% 的冷门猎手精选。"
+                 "样本内固定ROI +15.79%，但真实可成交赔率口径（Pinnacle 终盘）下未过 Bonferroni，待 2026-2027 独立期复现；"
+                 "开启仅作研究观察，不构成任何建议。德甲/英超专精为实验性 Beta，样本极少，不提供选择。"
         )
         falcon_plus_version = "基础版" if enable_falcon_plus else "关闭"
-        st.caption("💡 猎鹰Plus基础版 = 冷门猎手专精（高赔率+高置信），固定ROI +15.79% 已验证成立；"
+        st.caption("💡 猎鹰Plus（研究档）= 冷门猎手专精（高赔率+高置信），样本内固定ROI +15.79%（待独立期复现）；"
                    "关闭则退回基础猎鹰。批量场景无真实赔率，实际按置信度门槛（≥55%）生效。")
 
         # 【方向6-流畅性】结果缓存到 session_state：切tab/滑滑块等交互后不丢，无需重算
         ai_view_cache_key = "ai_view_result_cache"
         _ai_view_sig = (range_choice, falcon_plus_version)
 
-        if st.button("🔍 批量计算组合出手单", type="primary", key="calc_ai_view"):
+        if st.button("🔍 批量计算 AI 研究参考", type="primary", key="calc_ai_view"):
             if len(df_upcoming) == 0:
                 st.warning("暂无符合条件的赛事")
             else:
@@ -388,7 +400,7 @@ with tab_calendar:
                             falcon_plus_version=None if falcon_plus_version == "关闭" else falcon_plus_version
                         )
                         
-                        # 磐石Pro（保守AI + 高级模式：德甲/意甲精选，样本少作免费彩票）
+                        # 磐石Pro（保守AI + 高级模式：德甲/意甲精选，样本少、仅研究观察）
                         pro_intent = calc_ai_bet_intent(
                             conf, result,
                             league_code=league,
@@ -487,8 +499,8 @@ with tab_calendar:
                 df_top = df_ai_view[df_ai_view["共识等级"] == "🤝 三AI共识"]
 
                 if len(df_top) > 0:
-                    st.markdown("### 🏆 精选推荐（三AI共识）")
-                    st.caption("三个AI同时建议关注，可靠性最高")
+                    st.markdown("### 🔬 三AI研究共识")
+                    st.caption("三个 AI 研究输出一致（研究参考，不构成任何建议）")
                     for _, row in df_top.iterrows():
                         st.markdown(f"""
                         <div style="padding:12px;background:#f0f9eb;border-left:4px solid #67c23a;border-radius:6px;margin-bottom:8px">
@@ -523,7 +535,7 @@ with tab_calendar:
                         lambda x: f"{x:.1%}" if isinstance(x, (int, float)) and not pd.isna(x) else "—")
                 
                 st.dataframe(df_show, use_container_width=True, hide_index=True)
-                st.caption("💡 市场概率使用默认估算值（主胜2.5/平3.3/客3.0），实际以真实赔率为准；💎价值列 EV 基于模型概率×默认赔率，仅供小仓参考（≤5%），勿据此下重注；共识度越高参考价值越强")
+                st.caption("💡 市场概率使用默认估算值（主胜2.5/平3.3/客3.0），实际以真实赔率为准；💎价值列 EV 基于模型概率×默认赔率，为历史口径研究参考，不构成任何建议；三AI共识度仅供参考")
 
 with tab_predict:
     if not current_user:
@@ -786,7 +798,7 @@ with tab_track:
             st.dataframe(df_show, use_container_width=True, hide_index=True)
 
 # 底部更新日志（默认折叠，不占空间）
-APP_VERSION = "v1.3.1"
+APP_VERSION = "v1.4.0"
 st.divider()
 
 # 免责声明
@@ -797,18 +809,24 @@ st.warning("""
 
 with st.expander(f"📝 更新日志 · {APP_VERSION} 🆕", expanded=False):
     st.markdown("""
-**v1.3.3 — 2026-08-21（单场/出手参考体验修正）**
+**v1.4.0 — 2026-08-07（口径收敛 · 研究侧叙述统一 · 猎鹰降级）**
+- 🔬 **猎鹰/磐石/价值 全部降级为研究侧叙述**：移除「定稿/验证/产品化」等定性描述（仅保留研究侧措辞）；猎鹰标注「真实可成交赔率口径（Pinnacle 终盘）未过 Bonferroni，待 2026-2027 独立期复现」；磐石Pro 统一为 113 场口径、标注「统计不显著·仅研究观察」；价值标注「已从组合移除（C-015/016）」
+- 🚫 **看板删除产品化暗示**：移除全部暗示性表述（含出手类/仓位类/过度自信类措辞），猎鹰Plus 改为研究档并默认关闭
+- 📐 **版本号统一为 1.4.0**（config.json 为权威出口，README/CHANGELOG 同步）
+- 📖 单场预测/共识分析/决策参考 全部改为「历史回测观察 · 研究参考 · 不构成任何建议」措辞
+
+**v1.3.3 — 2026-08-05（单场/出手参考体验修正）**
 - 🎯 单场预测卡片：模型概率上位为主角（预测方向 + 主胜39%·平28%·客胜33%），「历史命中率」降级为「该档位」小字校准说明——修复旧版用户误读「主胜置信度41.4%」与模型概率对不上的困惑
 - 🦅 猎鹰Plus 简化为「启用基础版」单选框（默认开启，已验证+15.8%）：移除「关闭/德甲/英超」四选一，德甲/英超专精（实验性Beta存疑）不再作为选择项
 - 📊 出手参考空态根治：批量计算后默认显示全部赛事 + 顶部出手统计汇总（已评估/三AI共识/价值/磐石Pro/无AI出手）；无共识场次明确提示「模型保守没出手」而非空表；数据不足行列名与成功行统一
 - 📅 未来天数 → 按周划分：本周 / 下周 / 本周+下周，贴合周/半月数据更新节奏
 
-**v1.3.2 — 2026-08-21（组合出手单 · AI注册表驱动）**
-- 🔧 **出手参考升级为「组合出手单」**：不再只是三AI，新增 💎价值（EV≥10% 独立小仓 ≤5%）与 👑磐石Pro（德甲/意甲精选）两条腿，与决策参考的组合规则闭环
+**v1.3.2 — 2026-08-05（组合参考升级 · AI注册表驱动）**
+- 🔧 **出手参考升级为「组合参考」**：不再只是三AI，新增 💎价值（EV≥10% 独立小仓 ≤5%）与 👑磐石Pro（德甲/意甲精选）两条腿，与决策参考的组合规则闭环
 - 🧱 **AI 注册表驱动架构**：新增 `CONSENSUS_AI_KEYS` + `compute_value_signal`，共识标签/出手参考列/角色卡全部由注册表自动生成，未来加第四AI/第五AI只需登记一行配置，渲染代码零改动
 - 🔄 共识逻辑动态化：三档仍显示「三AI共识/两AI看好」，扩展到 4AI/5AI 时自动变「4AI共识」等
 
-**v1.3.1 — 2026-08-20（看板指引性·流畅性·用户粘性优化）**
+**v1.3.1 — 2026-08-04（看板指引性·流畅性·用户粘性优化）**
 - 🎯 新增「今日 AI 看点」：首屏直达未来2天三AI共识精选，每天自动更新，给你回来看的理由
 - 👋 新老用户差异化引导条：老用户显示「待开奖 X 场」钩子，新用户三步上手引导
 - 🔧 修复 AI 出手参考失效 Bug：特征调用缺第3赔率 → 全部"数据不足"，现已修复；结果持久化，切 tab 不丢
@@ -816,7 +834,7 @@ with st.expander(f"📝 更新日志 · {APP_VERSION} 🆕", expanded=False):
 - 🔔 预测历史新增「待开奖 + 最近7天开奖」提醒，开赛后来刷新看结果
 - 💾 预测保存成功/失败明确反馈 + 批量预测成功/跳过统计
 
-**v1.3.0 — 2026-08-08（看板全面修复 · 方案A：置信度改历史命中率）**
+**v1.3.0 — 2026-08-04（看板全面修复 · 方案A：置信度改历史命中率）**
 - 🔥 **方案A：置信度 ≠ 主胜概率**——置信度改为查「WF 分桶历史真实命中率」（根库 wf_confidence_accuracy）：拜仁主胜 52.3% → 置信度 55.2%；巴萨主胜 48.6% → 置信度 41.4%。语义＝「这个档位历史上命中了多少」，更保守真实
 - 🤖 **AI 出手参考保守化**：三 AI 阈值梯度（激进50% / 中立55% / 保守60%，历史命中率口径）+ 平局整体压一档；纯参考、绝不替您决定出手（UI 明确标注「是否出手由您独立判断」）
 - 🧩 预测/批量预测失效根治：match_feature_final 中英混杂队名 → feature_auto_build 中英双向匹配
