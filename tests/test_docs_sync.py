@@ -2,6 +2,8 @@
 """⑤ 文档同步：结论总览 / 研究索引 / backtest 关键数字逐字一致"""
 import os
 
+import pytest
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -12,12 +14,18 @@ def _read_text(rel):
 
 def test_no_fixed_finalized_claim():
     """研究侧红线：结论总览不得再出现「📌已定稿」定性描述"""
+    path = os.path.join(ROOT, "【文档】/00_结论总览.md")
+    if not os.path.exists(path):
+        pytest.skip("研究侧文档未入库（.gitignore 设计），CI 跳过")
     text = _read_text("【文档】/00_结论总览.md")
     assert "📌已定稿" not in text, "❌ 结论总览仍含「📌已定稿」"
 
 
 def test_falcon_exploratory_candidate():
     """猎鹰当前定位 = 探索性候选 / 待独立期复现"""
+    path = os.path.join(ROOT, "【文档】/00_结论总览.md")
+    if not os.path.exists(path):
+        pytest.skip("研究侧文档未入库（.gitignore 设计），CI 跳过")
     text = _read_text("【文档】/00_结论总览.md")
     assert ("探索性候选" in text) or ("待独立期复现" in text), \
         "❌ 结论总览未标注猎鹰「探索性候选/待复现」"
@@ -25,6 +33,9 @@ def test_falcon_exploratory_candidate():
 
 def test_panshi_113_matches():
     """磐石Pro 统一 113 场口径（研究索引不得再出现 203 场）"""
+    path = os.path.join(ROOT, "【策略研究】/00_README_研究索引.md")
+    if not os.path.exists(path):
+        pytest.skip("研究侧文档未入库（.gitignore 设计），CI 跳过")
     text = _read_text("【策略研究】/00_README_研究索引.md")
     assert "113 场" in text, "❌ 研究索引缺磐石Pro 113 场口径"
     assert "203 场" not in text, "❌ 研究索引仍含旧 203 场口径"
